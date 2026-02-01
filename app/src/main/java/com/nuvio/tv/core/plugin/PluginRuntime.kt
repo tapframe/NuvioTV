@@ -1,11 +1,14 @@
 package com.nuvio.tv.core.plugin
 
 import android.util.Log
+import com.dokar.quickjs.binding.asyncFunction
+import com.dokar.quickjs.binding.define
+import com.dokar.quickjs.binding.function
+import com.dokar.quickjs.quickJs
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.nuvio.tv.domain.model.LocalScraperResult
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import okhttp3.Headers
@@ -17,27 +20,29 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import org.jsoup.select.Elements
-import org.mozilla.javascript.Context
-import org.mozilla.javascript.Function
-import org.mozilla.javascript.NativeArray
-import org.mozilla.javascript.NativeObject
-import org.mozilla.javascript.ScriptableObject
-import org.mozilla.javascript.Undefined
+import java.io.ByteArrayInputStream
+import java.net.URL
+import java.security.MessageDigest
+import java.util.Base64
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.zip.GZIPInputStream
+import java.util.zip.InflaterInputStream
+import kotlin.text.Charsets
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 private const val TAG = "PluginRuntime"
 private const val PLUGIN_TIMEOUT_MS = 60_000L
-private const val MAX_RESPONSE_SIZE = 5 * 1024 * 1024L
 
 @Singleton
 class PluginRuntime @Inject constructor() {
-    
+
     private val gson: Gson = GsonBuilder().create()
-    
+
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -45,7 +50,70 @@ class PluginRuntime @Inject constructor() {
         .followRedirects(true)
         .followSslRedirects(true)
         .build()
-    
+
+    // Store parsed documents for cheerio
+    private val documentCache = ConcurrentHashMap<String, Document>()
+    private val elementCache = ConcurrentHashMap<String, Element>()
+
+    // Pre-compiled regex for :contains() selector conversion
+    private val containsRegex = Regex(""":contains\(["']([^"']+)["']\)""")
+
+    @Volatile
+    private var cachedCryptoJsSource: String? = null
+
+    private fun loadCryptoJsSourceOrNull(): String? {
+        cachedCryptoJsSource?.let { return it }
+        val cl = this::class.java.classLoader ?: return null
+
+        // WebJars layout: META-INF/resources/webjars/crypto-js/<version>/...
+        val candidatePaths = listOf(
+            "META-INF/resources/webjars/crypto-js/4.2.0/crypto-js.min.js",
+            "META-INF/resources/webjars/crypto-js/4.2.0/crypto-js.js",
+            "META-INF/resources/webjars/crypto-js/4.2.0/crypto-js/crypto-js.min.js",
+            "META-INF/resources/webjars/crypto-js/4.2.0/crypto-js/crypto-js.js",
+        )
+
+        for (path in candidatePaths) {
+            try {
+                cl.getResourceAsStream(path)?.use { input ->
+                    val text = input.readBytes().toString(Charsets.UTF_8)
+                    cachedCryptoJsSource = text
+                    return text
+                }
+            } catch (_: Exception) {
+                // Try next candidate
+            }
+        }
+        return null
+    }
+
+    private fun normalizeBase64(input: String): String {
+        var s = input.trim().replace("\n", "").replace("\r", "").replace(" ", "")
+        s = s.replace('-', '+').replace('_', '/')
+        val mod = s.length % 4
+        if (mod != 0) {
+            s += "=".repeat(4 - mod)
+        }
+        return s
+    }
+
+    private fun base64Decode(input: String): ByteArray {
+        return Base64.getDecoder().decode(normalizeBase64(input))
+    }
+
+    private fun base64Encode(bytes: ByteArray): String {
+        return Base64.getEncoder().encodeToString(bytes)
+    }
+
+    private fun bytesToHex(bytes: ByteArray): String {
+        val sb = StringBuilder(bytes.size * 2)
+        for (b in bytes) {
+            sb.append(((b.toInt() shr 4) and 0xF).toString(16))
+            sb.append((b.toInt() and 0xF).toString(16))
+        }
+        return sb.toString()
+    }
+
     /**
      * Execute a plugin and return streams
      */
@@ -62,7 +130,7 @@ class PluginRuntime @Inject constructor() {
             executePluginInternal(code, tmdbId, mediaType, season, episode, scraperId, scraperSettings)
         }
     }
-    
+
     private suspend fun executePluginInternal(
         code: String,
         tmdbId: String,
@@ -72,775 +140,890 @@ class PluginRuntime @Inject constructor() {
         scraperId: String,
         scraperSettings: Map<String, Any>
     ): List<LocalScraperResult> {
-        val context = Context.enter()
-        try {
-            // Rhino optimization level (-1 = interpreter mode, required for Android)
-            context.optimizationLevel = -1
-            context.languageVersion = Context.VERSION_ES6
-            
-            val scope = context.initStandardObjects()
-            
-            // Inject global utilities
-            injectGlobals(context, scope, scraperId, scraperSettings)
-            
-            // Inject CommonJS module system
-            val moduleExports = context.newObject(scope)
-            val moduleObj = context.newObject(scope) as ScriptableObject
-            ScriptableObject.putProperty(moduleObj, "exports", moduleExports)
-            ScriptableObject.putProperty(scope, "module", moduleObj)
-            ScriptableObject.putProperty(scope, "exports", moduleExports)
-            
-            // Execute plugin code
-            context.evaluateString(scope, code, scraperId, 1, null)
-            
-            // Find and call getStreams function
-            val getStreams = findGetStreamsFunction(scope, moduleObj)
-                ?: throw IllegalStateException("No getStreams function found in plugin")
-            
-            // Call getStreams(tmdbId, mediaType, season, episode)
-            val args = arrayOf<Any?>(
-                tmdbId,
-                mediaType,
-                season?.let { Context.javaToJS(it, scope) } ?: Undefined.instance,
-                episode?.let { Context.javaToJS(it, scope) } ?: Undefined.instance
-            )
-            
-            val result = getStreams.call(context, scope, scope, args)
-            
-            // Handle promise result
-            val resolvedResult = resolvePromise(context, scope, result)
-            
-            // Convert result to LocalScraperResult list
-            return parseResults(resolvedResult)
-            
-        } finally {
-            Context.exit()
-        }
-    }
-    
-    private fun findGetStreamsFunction(scope: ScriptableObject, moduleObj: ScriptableObject): Function? {
-        // Try global getStreams
-        val globalFn = ScriptableObject.getProperty(scope, "getStreams")
-        if (globalFn is Function) return globalFn
-        
-        // Try module.exports.getStreams
-        val exports = ScriptableObject.getProperty(moduleObj, "exports")
-        if (exports is ScriptableObject) {
-            val exportedFn = ScriptableObject.getProperty(exports, "getStreams")
-            if (exportedFn is Function) return exportedFn
-        }
-        
-        return null
-    }
-    
-    private fun resolvePromise(context: Context, scope: ScriptableObject, result: Any?): Any? {
-        if (result == null || result is Undefined) return null
-        
-        // Check if result is a Promise-like object
-        if (result is ScriptableObject) {
-            val then = ScriptableObject.getProperty(result, "then")
-            if (then is Function) {
-                // It's a promise - we need to resolve it synchronously
-                // This is a simplified approach - full async would require more work
-                var resolvedValue: Any? = null
-                var error: Throwable? = null
-                var completed = false
-                
-                val resolveFn = object : org.mozilla.javascript.BaseFunction() {
-                    override fun call(cx: Context, s: org.mozilla.javascript.Scriptable, thisObj: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any? {
-                        resolvedValue = args?.firstOrNull()
-                        completed = true
-                        return Undefined.instance
-                    }
-                }
-                
-                val rejectFn = object : org.mozilla.javascript.BaseFunction() {
-                    override fun call(cx: Context, s: org.mozilla.javascript.Scriptable, thisObj: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any? {
-                        val errArg = args?.firstOrNull()
-                        error = if (errArg is Throwable) errArg else RuntimeException(errArg?.toString() ?: "Promise rejected")
-                        completed = true
-                        return Undefined.instance
-                    }
-                }
-                
-                then.call(context, scope, result, arrayOf(resolveFn, rejectFn))
-                
-                // Poll for completion (simplified - real impl would use proper async)
-                val startTime = System.currentTimeMillis()
-                while (!completed && System.currentTimeMillis() - startTime < PLUGIN_TIMEOUT_MS) {
-                    Thread.sleep(10)
-                }
-                
-                if (error != null) throw error!!
-                return resolvedValue
-            }
-        }
-        
-        return result
-    }
-    
-    private fun parseResults(result: Any?): List<LocalScraperResult> {
-        if (result == null || result is Undefined) return emptyList()
-        
-        val results = mutableListOf<LocalScraperResult>()
-        
-        when (result) {
-            is NativeArray -> {
-                for (i in 0 until result.length.toInt()) {
-                    val item = result.get(i, result)
-                    parseResultItem(item)?.let { results.add(it) }
-                }
-            }
-            is List<*> -> {
-                result.filterNotNull().forEach { item ->
-                    parseResultItem(item)?.let { results.add(it) }
-                }
-            }
-        }
-        
-        return results.filter { it.url.isNotBlank() }
-    }
-    
-    private fun parseResultItem(item: Any?): LocalScraperResult? {
-        if (item == null || item is Undefined) return null
-        
-        return try {
-            when (item) {
-                is NativeObject -> {
-                    val title = getStringProp(item, "title") ?: getStringProp(item, "name") ?: "Unknown"
-                    val url = getStringProp(item, "url") ?: return null
-                    
-                    LocalScraperResult(
-                        title = title,
-                        name = getStringProp(item, "name"),
-                        url = url,
-                        quality = getStringProp(item, "quality"),
-                        size = getStringProp(item, "size"),
-                        language = getStringProp(item, "language"),
-                        provider = getStringProp(item, "provider"),
-                        type = getStringProp(item, "type"),
-                        seeders = getIntProp(item, "seeders"),
-                        peers = getIntProp(item, "peers"),
-                        infoHash = getStringProp(item, "infoHash"),
-                        headers = getMapProp(item, "headers")
-                    )
-                }
-                is Map<*, *> -> {
-                    val title = item["title"]?.toString() ?: item["name"]?.toString() ?: "Unknown"
-                    val url = item["url"]?.toString() ?: return null
-                    
-                    LocalScraperResult(
-                        title = title,
-                        name = item["name"]?.toString(),
-                        url = url,
-                        quality = item["quality"]?.toString(),
-                        size = item["size"]?.toString(),
-                        language = item["language"]?.toString(),
-                        provider = item["provider"]?.toString(),
-                        type = item["type"]?.toString(),
-                        seeders = (item["seeders"] as? Number)?.toInt(),
-                        peers = (item["peers"] as? Number)?.toInt(),
-                        infoHash = item["infoHash"]?.toString(),
-                        headers = null
-                    )
-                }
-                else -> null
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse result item: $e")
-            null
-        }
-    }
-    
-    private fun getStringProp(obj: NativeObject, key: String): String? {
-        val value = ScriptableObject.getProperty(obj, key)
-        return if (value is Undefined || value == null) null else value.toString()
-    }
-    
-    private fun getIntProp(obj: NativeObject, key: String): Int? {
-        val value = ScriptableObject.getProperty(obj, key)
-        return when (value) {
-            is Number -> value.toInt()
-            is String -> value.toIntOrNull()
-            else -> null
-        }
-    }
-    
-    private fun getMapProp(obj: NativeObject, key: String): Map<String, String>? {
-        val value = ScriptableObject.getProperty(obj, key)
-        if (value is Undefined || value == null) return null
-        
-        return try {
-            when (value) {
-                is NativeObject -> {
-                    val map = mutableMapOf<String, String>()
-                    value.ids.forEach { id ->
-                        val k = id.toString()
-                        val v = ScriptableObject.getProperty(value, k)
-                        if (v !is Undefined && v != null) {
-                            map[k] = v.toString()
-                        }
-                    }
-                    map.ifEmpty { null }
-                }
-                else -> null
-            }
-        } catch (e: Exception) {
-            null
-        }
-    }
-    
-    private fun injectGlobals(
-        context: Context,
-        scope: ScriptableObject,
-        scraperId: String,
-        scraperSettings: Map<String, Any>
-    ) {
-        // Console - create as native JS object with functions
-        val console = context.newObject(scope)
-        val logFn = createLogFunction(scraperId, "D")
-        val errorFn = createLogFunction(scraperId, "E")
-        val warnFn = createLogFunction(scraperId, "W")
-        val infoFn = createLogFunction(scraperId, "I")
-        ScriptableObject.putProperty(console, "log", logFn)
-        ScriptableObject.putProperty(console, "error", errorFn)
-        ScriptableObject.putProperty(console, "warn", warnFn)
-        ScriptableObject.putProperty(console, "info", infoFn)
-        ScriptableObject.putProperty(console, "debug", logFn)
-        ScriptableObject.putProperty(scope, "console", console)
-        
-        // Fetch function
-        val fetchFn = FetchFunction(httpClient, context, scope)
-        ScriptableObject.putProperty(scope, "fetch", fetchFn)
-        
-        // Cheerio-like HTML parser using jsoup
-        val cheerioFn = CheerioFunction(context, scope)
-        ScriptableObject.putProperty(scope, "cheerio", cheerioFn)
-        
-        // Require function
-        val requireFn = RequireFunction(context, scope, cheerioFn)
-        ScriptableObject.putProperty(scope, "require", requireFn)
-        
-        // URL and URLSearchParams
-        injectUrlClasses(context, scope)
-        
-        // encodeURIComponent
-        val encodeUriFn = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx: Context, s: org.mozilla.javascript.Scriptable, thisObj: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any {
-                val str = args?.firstOrNull()?.toString() ?: ""
-                return java.net.URLEncoder.encode(str, "UTF-8")
-            }
-        }
-        ScriptableObject.putProperty(scope, "encodeURIComponent", encodeUriFn)
-        
-        // decodeURIComponent
-        val decodeUriFn = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx: Context, s: org.mozilla.javascript.Scriptable, thisObj: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any {
-                val str = args?.firstOrNull()?.toString() ?: ""
-                return java.net.URLDecoder.decode(str, "UTF-8")
-            }
-        }
-        ScriptableObject.putProperty(scope, "decodeURIComponent", decodeUriFn)
-        
-        // Global settings - use native JS objects instead of javaToJS
-        ScriptableObject.putProperty(scope, "SCRAPER_ID", scraperId)
-        
-        // Convert scraperSettings to native JS object
-        val settingsObj = context.newObject(scope)
-        scraperSettings.forEach { (key, value) ->
-            ScriptableObject.putProperty(settingsObj, key, value.toString())
-        }
-        ScriptableObject.putProperty(scope, "SCRAPER_SETTINGS", settingsObj)
-        
-        ScriptableObject.putProperty(scope, "TMDB_API_KEY", "1865f43a0549ca50d341dd9ab8b29f49")
-    }
-    
-    private fun createLogFunction(tag: String, level: String): org.mozilla.javascript.BaseFunction {
-        return object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx: Context, s: org.mozilla.javascript.Scriptable, thisObj: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any {
-                val message = args?.joinToString(" ") { it?.toString() ?: "null" } ?: ""
-                when (level) {
-                    "E" -> Log.e("Plugin:$tag", message)
-                    "W" -> Log.w("Plugin:$tag", message)
-                    "I" -> Log.i("Plugin:$tag", message)
-                    else -> Log.d("Plugin:$tag", message)
-                }
-                return Undefined.instance
-            }
-        }
-    }
-    
-    private fun injectUrlClasses(context: Context, scope: ScriptableObject) {
-        // URL class
-        val urlConstructor = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx: Context, s: org.mozilla.javascript.Scriptable, thisObj: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any {
-                val urlString = args?.firstOrNull()?.toString() ?: ""
-                val url = java.net.URL(urlString)
-                
-                val obj = cx.newObject(s)
-                ScriptableObject.putProperty(obj, "href", urlString)
-                ScriptableObject.putProperty(obj, "protocol", url.protocol + ":")
-                ScriptableObject.putProperty(obj, "host", url.host + if (url.port > 0) ":${url.port}" else "")
-                ScriptableObject.putProperty(obj, "hostname", url.host)
-                ScriptableObject.putProperty(obj, "port", if (url.port > 0) url.port.toString() else "")
-                ScriptableObject.putProperty(obj, "pathname", url.path ?: "/")
-                ScriptableObject.putProperty(obj, "search", if (url.query != null) "?${url.query}" else "")
-                ScriptableObject.putProperty(obj, "hash", if (url.ref != null) "#${url.ref}" else "")
-                
-                return obj
-            }
-            
-            override fun construct(cx: Context, scope: org.mozilla.javascript.Scriptable, args: Array<out Any>?): org.mozilla.javascript.Scriptable {
-                return call(cx, scope, null, args) as org.mozilla.javascript.Scriptable
-            }
-        }
-        ScriptableObject.putProperty(scope, "URL", urlConstructor)
-        
-        // URLSearchParams class
-        val urlSearchParamsConstructor = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx: Context, s: org.mozilla.javascript.Scriptable, thisObj: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any {
-                val params = mutableMapOf<String, String>()
-                val initArg = args?.firstOrNull()
-                
-                if (initArg is NativeObject) {
-                    initArg.ids.forEach { id ->
-                        val key = id.toString()
-                        val value = ScriptableObject.getProperty(initArg, key)
-                        if (value !is Undefined && value != null) {
-                            params[key] = value.toString()
-                        }
-                    }
-                }
-                
-                val obj = cx.newObject(s)
-                
-                val toStringFn = object : org.mozilla.javascript.BaseFunction() {
-                    override fun call(cx: Context, s: org.mozilla.javascript.Scriptable, thisObj: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any {
-                        return params.entries.joinToString("&") { (k, v) ->
-                            "${java.net.URLEncoder.encode(k, "UTF-8")}=${java.net.URLEncoder.encode(v, "UTF-8")}"
-                        }
-                    }
-                }
-                ScriptableObject.putProperty(obj, "toString", toStringFn)
-                
-                return obj
-            }
-            
-            override fun construct(cx: Context, scope: org.mozilla.javascript.Scriptable, args: Array<out Any>?): org.mozilla.javascript.Scriptable {
-                return call(cx, scope, null, args) as org.mozilla.javascript.Scriptable
-            }
-        }
-        ScriptableObject.putProperty(scope, "URLSearchParams", urlSearchParamsConstructor)
-    }
-}
+        // Clear caches before execution
+        documentCache.clear()
+        elementCache.clear()
 
-/**
- * Fetch function implementation
- */
-class FetchFunction(
-    private val httpClient: OkHttpClient,
-    private val jsContext: Context,
-    private val jsScope: ScriptableObject
-) : org.mozilla.javascript.BaseFunction() {
-    
-    private fun createPromise(
-        cx: Context, 
-        scope: org.mozilla.javascript.Scriptable,
-        isResolved: Boolean,
-        value: Any?,
-        error: Any? = null
-    ): ScriptableObject {
-        val promiseObj = cx.newObject(scope) as ScriptableObject
-        
-        val thenFn = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx2: Context, s: org.mozilla.javascript.Scriptable, thisObj2: org.mozilla.javascript.Scriptable?, args2: Array<out Any>?): Any {
-                return if (isResolved) {
-                    val callback = args2?.firstOrNull() as? Function
-                    if (callback != null) {
-                        try {
-                            val result = callback.call(cx2, s, thisObj2, arrayOf(value ?: Undefined.instance))
-                            // Return a resolved promise with the result
-                            createPromise(cx2, s, true, result)
-                        } catch (e: Exception) {
-                            // Return a rejected promise
-                            createPromise(cx2, s, false, null, e.message ?: "Error")
-                        }
-                    } else {
-                        createPromise(cx2, s, true, value)
+        var resultJson = "[]"
+
+        try {
+            quickJs(Dispatchers.IO) {
+                // Define console object
+                define("console") {
+                    function("log") { args ->
+                        Log.d("Plugin:$scraperId", args.joinToString(" ") { it?.toString() ?: "null" })
                     }
-                } else {
-                    // Pass through rejection
-                    createPromise(cx2, s, false, null, error)
-                }
-            }
-        }
-        ScriptableObject.putProperty(promiseObj, "then", thenFn)
-        
-        val catchFn = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx2: Context, s: org.mozilla.javascript.Scriptable, thisObj2: org.mozilla.javascript.Scriptable?, args2: Array<out Any>?): Any {
-                return if (!isResolved) {
-                    val callback = args2?.firstOrNull() as? Function
-                    if (callback != null) {
-                        try {
-                            val errorObj = cx2.newObject(s)
-                            ScriptableObject.putProperty(errorObj, "message", error?.toString() ?: "Unknown error")
-                            val result = callback.call(cx2, s, thisObj2, arrayOf(errorObj))
-                            createPromise(cx2, s, true, result)
-                        } catch (e: Exception) {
-                            createPromise(cx2, s, false, null, e.message)
-                        }
-                    } else {
-                        createPromise(cx2, s, false, null, error)
+                    function("error") { args ->
+                        Log.e("Plugin:$scraperId", args.joinToString(" ") { it?.toString() ?: "null" })
                     }
-                } else {
-                    // Resolved, no error to catch
-                    createPromise(cx2, s, true, value)
+                    function("warn") { args ->
+                        Log.w("Plugin:$scraperId", args.joinToString(" ") { it?.toString() ?: "null" })
+                    }
+                    function("info") { args ->
+                        Log.i("Plugin:$scraperId", args.joinToString(" ") { it?.toString() ?: "null" })
+                    }
+                    function("debug") { args ->
+                        Log.d("Plugin:$scraperId", args.joinToString(" ") { it?.toString() ?: "null" })
+                    }
                 }
+
+                // Define native fetch function (async)
+                asyncFunction("__native_fetch") { args ->
+                    val url = args.getOrNull(0)?.toString() ?: ""
+                    val method = args.getOrNull(1)?.toString() ?: "GET"
+                    val headersJson = args.getOrNull(2)?.toString() ?: "{}"
+                    val body = args.getOrNull(3)?.toString() ?: ""
+                    performNativeFetch(url, method, headersJson, body)
+                }
+
+                // Define URL parser
+                function("__parse_url") { args ->
+                    val urlString = args.getOrNull(0)?.toString() ?: ""
+                    parseUrl(urlString)
+                }
+
+                // Define cheerio load function
+                function("__cheerio_load") { args ->
+                    val html = args.getOrNull(0)?.toString() ?: ""
+                    val docId = UUID.randomUUID().toString()
+                    val doc = Jsoup.parse(html)
+                    documentCache[docId] = doc
+                    docId
+                }
+
+                // Define cheerio select function
+                function("__cheerio_select") { args ->
+                    val docId = args.getOrNull(0)?.toString() ?: ""
+                    var selector = args.getOrNull(1)?.toString() ?: ""
+                    val doc = documentCache[docId] ?: return@function "[]"
+                    try {
+                        // Convert cheerio :contains("text") to jsoup :contains(text)
+                        selector = selector.replace(containsRegex, ":contains($1)")
+                        val elements = if (selector.isEmpty()) {
+                            Elements()
+                        } else {
+                            doc.select(selector)
+                        }
+                        val ids = elements.mapIndexed { index, el ->
+                            val elId = "$docId:$index:${el.hashCode()}"
+                            elementCache[elId] = el
+                            elId
+                        }
+                        // Use simple JSON array construction to avoid Gson issues
+                        "[" + ids.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" } + "]"
+                    } catch (e: Exception) {
+                        "[]"
+                    }
+                }
+
+                // Define cheerio find function
+                function("__cheerio_find") { args ->
+                    val docId = args.getOrNull(0)?.toString() ?: ""
+                    val elementId = args.getOrNull(1)?.toString() ?: ""
+                    var selector = args.getOrNull(2)?.toString() ?: ""
+                    val element = elementCache[elementId] ?: return@function "[]"
+                    try {
+                        // Convert cheerio :contains("text") to jsoup :contains(text)
+                        selector = selector.replace(containsRegex, ":contains($1)")
+                        val elements = element.select(selector)
+                        val ids = elements.mapIndexed { index, el ->
+                            val elId = "$docId:find:$index:${el.hashCode()}"
+                            elementCache[elId] = el
+                            elId
+                        }
+                        // Use simple JSON array construction to avoid Gson issues
+                        "[" + ids.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" } + "]"
+                    } catch (e: Exception) {
+                        "[]"
+                    }
+                }
+
+                // Define cheerio text function
+                function("__cheerio_text") { args ->
+                    val elementIds = args.getOrNull(1)?.toString() ?: ""
+                    val ids = elementIds.split(",").filter { it.isNotEmpty() }
+                    val texts = ids.mapNotNull { id ->
+                        elementCache[id]?.text()
+                    }
+                    texts.joinToString(" ")
+                }
+
+                // Define cheerio html function
+                function("__cheerio_html") { args ->
+                    val docId = args.getOrNull(0)?.toString() ?: ""
+                    val elementId = args.getOrNull(1)?.toString() ?: ""
+                    if (elementId.isEmpty()) {
+                        documentCache[docId]?.html() ?: ""
+                    } else {
+                        elementCache[elementId]?.html() ?: ""
+                    }
+                }
+
+                // Define cheerio inner html function
+                function("__cheerio_inner_html") { args ->
+                    val elementId = args.getOrNull(1)?.toString() ?: ""
+                    elementCache[elementId]?.html() ?: ""
+                }
+
+                // Define cheerio attr function
+                function("__cheerio_attr") { args ->
+                    val elementId = args.getOrNull(1)?.toString() ?: ""
+                    val attrName = args.getOrNull(2)?.toString() ?: ""
+                    val value = elementCache[elementId]?.attr(attrName)
+                    if (value.isNullOrEmpty()) "__UNDEFINED__" else value
+                }
+
+                // Define cheerio next function
+                function("__cheerio_next") { args ->
+                    val docId = args.getOrNull(0)?.toString() ?: ""
+                    val elementId = args.getOrNull(1)?.toString() ?: ""
+                    val el = elementCache[elementId] ?: return@function "__NONE__"
+                    val next = el.nextElementSibling() ?: return@function "__NONE__"
+                    val nextId = "$docId:next:${next.hashCode()}"
+                    elementCache[nextId] = next
+                    nextId
+                }
+
+                // Define cheerio prev function
+                function("__cheerio_prev") { args ->
+                    val docId = args.getOrNull(0)?.toString() ?: ""
+                    val elementId = args.getOrNull(1)?.toString() ?: ""
+                    val el = elementCache[elementId] ?: return@function "__NONE__"
+                    val prev = el.previousElementSibling() ?: return@function "__NONE__"
+                    val prevId = "$docId:prev:${prev.hashCode()}"
+                    elementCache[prevId] = prev
+                    prevId
+                }
+
+                // Note: crypto-js is now loaded as a real library (WebJars) before plugin execution.
+
+                // Function to capture results
+                function("__capture_result") { args ->
+                    resultJson = args.getOrNull(0)?.toString() ?: "[]"
+                }
+
+                // Inject JavaScript polyfills
+                val settingsJson = gson.toJson(scraperSettings)
+                val polyfillCode = buildPolyfillCode(scraperId, settingsJson)
+                evaluate<Any?>(polyfillCode)
+
+                // Load real crypto-js into the JS runtime before plugin code runs.
+                loadCryptoJsSourceOrNull()?.let { cryptoJsSource ->
+                    evaluate<Any?>(cryptoJsSource)
+                }
+
+                // Execute plugin code with module wrapper
+                val wrappedCode = """
+                    var module = { exports: {} };
+                    var exports = module.exports;
+                    $code
+                """.trimIndent()
+                evaluate<Any?>(wrappedCode)
+
+                // Call getStreams and capture result
+                val seasonArg = season?.toString() ?: "undefined"
+                val episodeArg = episode?.toString() ?: "undefined"
+
+                val callCode = """
+                    (async function() {
+                        try {
+                            var getStreams = module.exports.getStreams || globalThis.getStreams;
+                            if (!getStreams) {
+                                __capture_result(JSON.stringify([]));
+                                return;
+                            }
+                            var result = await getStreams("$tmdbId", "$mediaType", $seasonArg, $episodeArg);
+                            __capture_result(JSON.stringify(result || []));
+                        } catch (e) {
+                            console.error("getStreams error:", e.message || e);
+                            __capture_result(JSON.stringify([]));
+                        }
+                    })();
+                """.trimIndent()
+
+                evaluate<Any?>(callCode)
             }
+
+            return parseJsonResults(resultJson)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Plugin execution failed: ${e.message}", e)
+            throw e
+        } finally {
+            // Clean up caches
+            documentCache.clear()
+            elementCache.clear()
         }
-        ScriptableObject.putProperty(promiseObj, "catch", catchFn)
-        
-        val finallyFn = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx2: Context, s: org.mozilla.javascript.Scriptable, thisObj2: org.mozilla.javascript.Scriptable?, args2: Array<out Any>?): Any {
-                val callback = args2?.firstOrNull() as? Function
-                callback?.call(cx2, s, thisObj2, emptyArray())
-                return createPromise(cx2, s, isResolved, value, error)
-            }
-        }
-        ScriptableObject.putProperty(promiseObj, "finally", finallyFn)
-        
-        return promiseObj
     }
-    
-    override fun call(
-        cx: Context,
-        scope: org.mozilla.javascript.Scriptable,
-        thisObj: org.mozilla.javascript.Scriptable?,
-        args: Array<out Any>?
-    ): Any {
-        val url = args?.firstOrNull()?.toString() ?: throw IllegalArgumentException("URL required")
-        val options = args?.getOrNull(1) as? NativeObject
-        
+
+    private fun performNativeFetch(url: String, method: String, headersJson: String, body: String): String {
         return try {
-            val response = performFetch(url, options)
-            val responseObj = createResponseObject(cx, scope, response)
-            createPromise(cx, scope, true, responseObj)
+            val headers = mutableMapOf<String, String>()
+            try {
+                val headersMap = gson.fromJson(headersJson, Map::class.java)
+                headersMap?.forEach { (k, v) ->
+                    if (k != null && v != null) {
+                        val key = k.toString()
+                        // If callers set Accept-Encoding manually, OkHttp will not transparently decompress.
+                        // Strip it so OkHttp can negotiate and decode automatically.
+                        if (!key.equals("Accept-Encoding", ignoreCase = true)) {
+                            headers[key] = v.toString()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore header parsing errors
+            }
+
+            // Default User-Agent
+            if (!headers.containsKey("User-Agent")) {
+                headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+
+            val requestBuilder = Request.Builder()
+                .url(url)
+                .headers(Headers.headersOf(*headers.flatMap { listOf(it.key, it.value) }.toTypedArray()))
+
+            when (method.uppercase()) {
+                "POST" -> {
+                    val contentType = headers["Content-Type"] ?: "application/x-www-form-urlencoded"
+                    requestBuilder.post(body.toRequestBody(contentType.toMediaType()))
+                }
+                "PUT" -> {
+                    val contentType = headers["Content-Type"] ?: "application/json"
+                    requestBuilder.put(body.toRequestBody(contentType.toMediaType()))
+                }
+                "DELETE" -> requestBuilder.delete()
+                else -> requestBuilder.get()
+            }
+
+            val request = requestBuilder.build()
+            val response = httpClient.newCall(request).execute()
+
+            val responseBodyBytes = response.body?.bytes() ?: ByteArray(0)
+            val contentEncoding = response.header("Content-Encoding")?.lowercase()?.trim()
+            val decodedBytes = try {
+                when (contentEncoding) {
+                    "gzip" -> GZIPInputStream(ByteArrayInputStream(responseBodyBytes)).use { it.readBytes() }
+                    "deflate" -> InflaterInputStream(ByteArrayInputStream(responseBodyBytes)).use { it.readBytes() }
+                    else -> responseBodyBytes
+                }
+            } catch (e: Exception) {
+                // If decoding fails, fall back to raw bytes.
+                responseBodyBytes
+            }
+
+            val charset = response.body?.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8
+            val responseBody = try {
+                String(decodedBytes, charset)
+            } catch (e: Exception) {
+                String(decodedBytes, Charsets.UTF_8)
+            }
+            val responseHeaders = mutableMapOf<String, String>()
+            response.headers.forEach { (name, value) ->
+                responseHeaders[name.lowercase()] = value
+            }
+
+            val result = mapOf(
+                "ok" to response.isSuccessful,
+                "status" to response.code,
+                "statusText" to response.message,
+                "url" to response.request.url.toString(),
+                "body" to responseBody,
+                "headers" to responseHeaders
+            )
+
+            gson.toJson(result)
         } catch (e: Exception) {
             Log.e(TAG, "Fetch error: ${e.message}")
-            createPromise(cx, scope, false, null, e.message ?: "Fetch failed")
+            gson.toJson(mapOf(
+                "ok" to false,
+                "status" to 0,
+                "statusText" to (e.message ?: "Fetch failed"),
+                "url" to url,
+                "body" to "",
+                "headers" to emptyMap<String, String>()
+            ))
         }
     }
-    
-    private fun performFetch(url: String, options: NativeObject?): FetchResponse {
-        val method = options?.let { 
-            ScriptableObject.getProperty(it, "method")?.toString()?.uppercase() 
-        } ?: "GET"
-        
-        val headers = mutableMapOf<String, String>()
-        options?.let {
-            val headersObj = ScriptableObject.getProperty(it, "headers")
-            if (headersObj is NativeObject) {
-                headersObj.ids.forEach { id ->
-                    val key = id.toString()
-                    val value = ScriptableObject.getProperty(headersObj, key)
-                    if (value !is Undefined && value != null) {
-                        headers[key] = value.toString()
+
+    private fun parseUrl(urlString: String): String {
+        return try {
+            val url = URL(urlString)
+            gson.toJson(mapOf(
+                "protocol" to "${url.protocol}:",
+                "host" to if (url.port > 0) "${url.host}:${url.port}" else url.host,
+                "hostname" to url.host,
+                "port" to if (url.port > 0) url.port.toString() else "",
+                "pathname" to (url.path ?: "/"),
+                "search" to if (url.query != null) "?${url.query}" else "",
+                "hash" to if (url.ref != null) "#${url.ref}" else ""
+            ))
+        } catch (e: Exception) {
+            gson.toJson(mapOf(
+                "protocol" to "",
+                "host" to "",
+                "hostname" to "",
+                "port" to "",
+                "pathname" to "/",
+                "search" to "",
+                "hash" to ""
+            ))
+        }
+    }
+
+    private fun buildPolyfillCode(scraperId: String, settingsJson: String): String {
+        return """
+            // Global constants (using globalThis to avoid redeclaration errors)
+            globalThis.SCRAPER_ID = "$scraperId";
+            globalThis.SCRAPER_SETTINGS = $settingsJson;
+            if (typeof TMDB_API_KEY === 'undefined') {
+                globalThis.TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
+            }
+
+            // Fetch implementation (async)
+            var fetch = async function(url, options) {
+                options = options || {};
+                var method = (options.method || 'GET').toUpperCase();
+                var headers = options.headers || {};
+                var body = options.body || '';
+
+                // Add default User-Agent
+                if (!headers['User-Agent']) {
+                    headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+                }
+
+                var result = await __native_fetch(url, method, JSON.stringify(headers), body);
+                var parsed = JSON.parse(result);
+
+                return {
+                    ok: parsed.ok,
+                    status: parsed.status,
+                    statusText: parsed.statusText,
+                    url: parsed.url,
+                    headers: {
+                        get: function(name) {
+                            return parsed.headers[name.toLowerCase()] || null;
+                        }
+                    },
+                    text: function() {
+                        return Promise.resolve(parsed.body);
+                    },
+                    json: function() {
+                        try {
+                            return Promise.resolve(JSON.parse(parsed.body));
+                        } catch (e) {
+                            return Promise.reject(new Error('JSON parse error: ' + e.message));
+                        }
                     }
-                }
-            }
-        }
-        
-        // Default User-Agent
-        if (!headers.containsKey("User-Agent")) {
-            headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-        
-        val body = options?.let {
-            val bodyProp = ScriptableObject.getProperty(it, "body")
-            if (bodyProp !is Undefined && bodyProp != null) bodyProp.toString() else null
-        }
-        
-        val requestBuilder = Request.Builder()
-            .url(url)
-            .headers(Headers.headersOf(*headers.flatMap { listOf(it.key, it.value) }.toTypedArray()))
-        
-        when (method) {
-            "POST" -> {
-                val contentType = headers["Content-Type"] ?: "application/x-www-form-urlencoded"
-                requestBuilder.post((body ?: "").toRequestBody(contentType.toMediaType()))
-            }
-            "PUT" -> {
-                val contentType = headers["Content-Type"] ?: "application/json"
-                requestBuilder.put((body ?: "").toRequestBody(contentType.toMediaType()))
-            }
-            "DELETE" -> requestBuilder.delete()
-            else -> requestBuilder.get()
-        }
-        
-        val request = requestBuilder.build()
-        val response = httpClient.newCall(request).execute()
-        
-        val responseBody = response.body?.string() ?: ""
-        val responseHeaders = mutableMapOf<String, String>()
-        response.headers.forEach { (name, value) ->
-            responseHeaders[name] = value
-        }
-        
-        return FetchResponse(
-            ok = response.isSuccessful,
-            status = response.code,
-            statusText = response.message,
-            url = response.request.url.toString(),
-            body = responseBody,
-            headers = responseHeaders
-        )
-    }
-    
-    private fun createResponseObject(cx: Context, scope: org.mozilla.javascript.Scriptable, response: FetchResponse): ScriptableObject {
-        val responseObj = cx.newObject(scope) as ScriptableObject
-        
-        ScriptableObject.putProperty(responseObj, "ok", response.ok)
-        ScriptableObject.putProperty(responseObj, "status", response.status)
-        ScriptableObject.putProperty(responseObj, "statusText", response.statusText)
-        ScriptableObject.putProperty(responseObj, "url", response.url)
-        
-        // Headers object
-        val headersObj = cx.newObject(scope)
-        response.headers.forEach { (k, v) ->
-            ScriptableObject.putProperty(headersObj, k.lowercase(), v)
-        }
-        val getFn = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx2: Context, s: org.mozilla.javascript.Scriptable, thisObj2: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any? {
-                val key = args?.firstOrNull()?.toString()?.lowercase() ?: return null
-                return response.headers[key] ?: response.headers.entries.find { 
-                    it.key.lowercase() == key 
-                }?.value
-            }
-        }
-        ScriptableObject.putProperty(headersObj, "get", getFn)
-        ScriptableObject.putProperty(responseObj, "headers", headersObj)
-        
-        // text() method - uses createPromise for proper chaining
-        val textFn = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx2: Context, s: org.mozilla.javascript.Scriptable, thisObj2: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any {
-                return createPromise(cx2, s, true, response.body)
-            }
-        }
-        ScriptableObject.putProperty(responseObj, "text", textFn)
-        
-        // json() method - uses createPromise for proper chaining
-        val jsonFn = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx2: Context, s: org.mozilla.javascript.Scriptable, thisObj2: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any {
-                return try {
-                    val parsed = cx2.evaluateString(s, "(${response.body})", "json", 1, null)
-                    createPromise(cx2, s, true, parsed)
-                } catch (e: Exception) {
-                    createPromise(cx2, s, false, null, "JSON parse error: ${e.message}")
-                }
-            }
-        }
-        ScriptableObject.putProperty(responseObj, "json", jsonFn)
-        
-        return responseObj
-    }
-}
+                };
+            };
 
-data class FetchResponse(
-    val ok: Boolean,
-    val status: Int,
-    val statusText: String,
-    val url: String,
-    val body: String,
-    val headers: Map<String, String>
-)
+            // URL class
+            var URL = function(urlString) {
+                var parsed = __parse_url(urlString);
+                var data = JSON.parse(parsed);
+                this.href = urlString;
+                this.protocol = data.protocol;
+                this.host = data.host;
+                this.hostname = data.hostname;
+                this.port = data.port;
+                this.pathname = data.pathname;
+                this.search = data.search;
+                this.hash = data.hash;
+            };
 
-/**
- * Cheerio-like HTML parser using jsoup
- */
-class CheerioFunction(
-    private val jsContext: Context,
-    private val jsScope: ScriptableObject
-) : org.mozilla.javascript.BaseFunction() {
-    
-    override fun call(
-        cx: Context,
-        scope: org.mozilla.javascript.Scriptable,
-        thisObj: org.mozilla.javascript.Scriptable?,
-        args: Array<out Any>?
-    ): Any {
-        // Return cheerio object with load function
-        val cheerioObj = cx.newObject(scope)
-        
-        val loadFn = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx2: Context, s: org.mozilla.javascript.Scriptable, thisObj2: org.mozilla.javascript.Scriptable?, args2: Array<out Any>?): Any {
-                val html = args2?.firstOrNull()?.toString() ?: ""
-                val doc = Jsoup.parse(html)
-                return createJQueryFunction(cx2, s as ScriptableObject, doc)
-            }
-        }
-        ScriptableObject.putProperty(cheerioObj, "load", loadFn)
-        
-        return cheerioObj
-    }
-    
-    private fun createJQueryFunction(cx: Context, scope: ScriptableObject, doc: Document): org.mozilla.javascript.BaseFunction {
-        return object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx2: Context, s: org.mozilla.javascript.Scriptable, thisObj2: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any {
-                val selector = args?.firstOrNull()?.toString() ?: return createCheerioWrapper(cx2, s as ScriptableObject, Elements())
-                
-                val elements = try {
-                    doc.select(selector)
-                } catch (e: Exception) {
-                    Elements()
+            // URLSearchParams class
+            var URLSearchParams = function(init) {
+                this._params = {};
+                var self = this;
+                if (init && typeof init === 'object' && !Array.isArray(init)) {
+                    Object.keys(init).forEach(function(key) {
+                        self._params[key] = String(init[key]);
+                    });
+                } else if (typeof init === 'string') {
+                    init.replace(/^\?/, '').split('&').forEach(function(pair) {
+                        var parts = pair.split('=');
+                        if (parts[0]) {
+                            self._params[decodeURIComponent(parts[0])] = decodeURIComponent(parts[1] || '');
+                        }
+                    });
                 }
-                
-                return createCheerioWrapper(cx2, s as ScriptableObject, elements)
-            }
-        }
-    }
-    
-    private fun createCheerioWrapper(cx: Context, scope: ScriptableObject, elements: Elements): ScriptableObject {
-        val wrapper = cx.newObject(scope) as ScriptableObject
-        
-        // length property
-        ScriptableObject.putProperty(wrapper, "length", elements.size)
-        
-        // Index access
-        elements.forEachIndexed { index, element ->
-            ScriptableObject.putProperty(wrapper, index, createElementWrapper(cx, scope, element))
-        }
-        
-        // each(callback)
-        val eachFn = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx2: Context, s: org.mozilla.javascript.Scriptable, thisObj2: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any {
-                val callback = args?.firstOrNull() as? Function ?: return wrapper
-                elements.forEachIndexed { index, element ->
-                    val elWrapper = createElementWrapper(cx2, s as ScriptableObject, element)
-                    callback.call(cx2, s, thisObj2, arrayOf(index, elWrapper))
+            };
+            URLSearchParams.prototype.toString = function() {
+                var self = this;
+                return Object.keys(this._params).map(function(key) {
+                    return encodeURIComponent(key) + '=' + encodeURIComponent(self._params[key]);
+                }).join('&');
+            };
+            URLSearchParams.prototype.get = function(key) {
+                return this._params.hasOwnProperty(key) ? this._params[key] : null;
+            };
+            URLSearchParams.prototype.set = function(key, value) {
+                this._params[key] = String(value);
+            };
+            URLSearchParams.prototype.append = function(key, value) {
+                this._params[key] = String(value);
+            };
+            URLSearchParams.prototype.has = function(key) {
+                return this._params.hasOwnProperty(key);
+            };
+            URLSearchParams.prototype.delete = function(key) {
+                delete this._params[key];
+            };
+
+            // Cheerio implementation
+            var cheerio = {
+                load: function(html) {
+                    var docId = __cheerio_load(html);
+
+                    var $ = function(selector, context) {
+                        // Handle $(wrapper) - return wrapper as-is
+                        if (selector && selector._elementIds) {
+                            return selector;
+                        }
+                        // Handle $(selector, context) pattern
+                        if (context && context._elementIds && context._elementIds.length > 0) {
+                            // Search within context element
+                            var allIds = [];
+                            for (var i = 0; i < context._elementIds.length; i++) {
+                                var childIdsJson = __cheerio_find(docId, context._elementIds[i], selector);
+                                var childIds = JSON.parse(childIdsJson);
+                                allIds = allIds.concat(childIds);
+                            }
+                            return createCheerioWrapperFromIds(docId, allIds);
+                        }
+                        // Standard $(selector) call
+                        return createCheerioWrapper(docId, selector);
+                    };
+
+                    $.html = function(el) {
+                        if (el && el._elementIds && el._elementIds.length > 0) {
+                            return __cheerio_html(docId, el._elementIds[0]);
+                        }
+                        return __cheerio_html(docId, '');
+                    };
+
+                    return $;
                 }
-                return wrapper
-            }
-        }
-        ScriptableObject.putProperty(wrapper, "each", eachFn)
-        
-        // find(selector)
-        val findFn = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx2: Context, s: org.mozilla.javascript.Scriptable, thisObj2: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any {
-                val selector = args?.firstOrNull()?.toString() ?: return createCheerioWrapper(cx2, s as ScriptableObject, Elements())
-                val found = Elements()
-                elements.forEach { el ->
-                    try {
-                        found.addAll(el.select(selector))
-                    } catch (e: Exception) { }
-                }
-                return createCheerioWrapper(cx2, s as ScriptableObject, found)
-            }
-        }
-        ScriptableObject.putProperty(wrapper, "find", findFn)
-        
-        // text()
-        val textFn = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx2: Context, s: org.mozilla.javascript.Scriptable, thisObj2: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any {
-                return elements.text()
-            }
-        }
-        ScriptableObject.putProperty(wrapper, "text", textFn)
-        
-        // html()
-        val htmlFn = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx2: Context, s: org.mozilla.javascript.Scriptable, thisObj2: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any {
-                return elements.html()
-            }
-        }
-        ScriptableObject.putProperty(wrapper, "html", htmlFn)
-        
-        // attr(name)
-        val attrFn = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx2: Context, s: org.mozilla.javascript.Scriptable, thisObj2: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any? {
-                val name = args?.firstOrNull()?.toString() ?: return null
-                return elements.firstOrNull()?.attr(name) ?: Undefined.instance
-            }
-        }
-        ScriptableObject.putProperty(wrapper, "attr", attrFn)
-        
-        // first()
-        val firstFn = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx2: Context, s: org.mozilla.javascript.Scriptable, thisObj2: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any {
-                val first = elements.firstOrNull()
-                return if (first != null) {
-                    createCheerioWrapper(cx2, s as ScriptableObject, Elements(listOf(first)))
+            };
+
+            function createCheerioWrapper(docId, selector) {
+                var elementIds;
+                if (typeof selector === 'string') {
+                    var idsJson = __cheerio_select(docId, selector);
+                    elementIds = JSON.parse(idsJson);
                 } else {
-                    createCheerioWrapper(cx2, s as ScriptableObject, Elements())
+                    elementIds = [];
                 }
-            }
-        }
-        ScriptableObject.putProperty(wrapper, "first", firstFn)
-        
-        // last()
-        val lastFn = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx2: Context, s: org.mozilla.javascript.Scriptable, thisObj2: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any {
-                val last = elements.lastOrNull()
-                return if (last != null) {
-                    createCheerioWrapper(cx2, s as ScriptableObject, Elements(listOf(last)))
-                } else {
-                    createCheerioWrapper(cx2, s as ScriptableObject, Elements())
-                }
-            }
-        }
-        ScriptableObject.putProperty(wrapper, "last", lastFn)
-        
-        // next()
-        val nextFn = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx2: Context, s: org.mozilla.javascript.Scriptable, thisObj2: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any {
-                val nextElements = Elements()
-                elements.forEach { el ->
-                    el.nextElementSibling()?.let { nextElements.add(it) }
-                }
-                return createCheerioWrapper(cx2, s as ScriptableObject, nextElements)
-            }
-        }
-        ScriptableObject.putProperty(wrapper, "next", nextFn)
-        
-        // prev()
-        val prevFn = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(cx2: Context, s: org.mozilla.javascript.Scriptable, thisObj2: org.mozilla.javascript.Scriptable?, args: Array<out Any>?): Any {
-                val prevElements = Elements()
-                elements.forEach { el ->
-                    el.previousElementSibling()?.let { prevElements.add(it) }
-                }
-                return createCheerioWrapper(cx2, s as ScriptableObject, prevElements)
-            }
-        }
-        ScriptableObject.putProperty(wrapper, "prev", prevFn)
-        
-        return wrapper
-    }
-    
-    private fun createElementWrapper(cx: Context, scope: ScriptableObject, element: Element): ScriptableObject {
-        return createCheerioWrapper(cx, scope, Elements(listOf(element)))
-    }
-}
 
-/**
- * Require function for CommonJS modules
- */
-class RequireFunction(
-    private val jsContext: Context,
-    private val jsScope: ScriptableObject,
-    private val cheerioFn: CheerioFunction
-) : org.mozilla.javascript.BaseFunction() {
-    
-    override fun call(
-        cx: Context,
-        scope: org.mozilla.javascript.Scriptable,
-        thisObj: org.mozilla.javascript.Scriptable?,
-        args: Array<out Any>?
-    ): Any {
-        val moduleName = args?.firstOrNull()?.toString() ?: throw IllegalArgumentException("Module name required")
-        
-        return when (moduleName) {
-            "cheerio", "cheerio-without-node-native", "react-native-cheerio" -> cheerioFn
-            else -> throw IllegalArgumentException("Module '$moduleName' is not available")
+                var wrapper = {
+                    _docId: docId,
+                    _elementIds: elementIds,
+                    length: elementIds.length,
+
+                    each: function(callback) {
+                        for (var i = 0; i < elementIds.length; i++) {
+                            var elWrapper = createCheerioWrapperFromIds(docId, [elementIds[i]]);
+                            callback.call(elWrapper, i, elWrapper);
+                        }
+                        return wrapper;
+                    },
+
+                    find: function(sel) {
+                        var allIds = [];
+                        for (var i = 0; i < elementIds.length; i++) {
+                            var childIdsJson = __cheerio_find(docId, elementIds[i], sel);
+                            var childIds = JSON.parse(childIdsJson);
+                            allIds = allIds.concat(childIds);
+                        }
+                        return createCheerioWrapperFromIds(docId, allIds);
+                    },
+
+                    text: function() {
+                        if (elementIds.length === 0) return '';
+                        return __cheerio_text(docId, elementIds.join(','));
+                    },
+
+                    html: function() {
+                        if (elementIds.length === 0) return '';
+                        return __cheerio_inner_html(docId, elementIds[0]);
+                    },
+
+                    attr: function(name) {
+                        if (elementIds.length === 0) return undefined;
+                        var val = __cheerio_attr(docId, elementIds[0], name);
+                        return val === '__UNDEFINED__' ? undefined : val;
+                    },
+
+                    first: function() {
+                        return createCheerioWrapperFromIds(docId, elementIds.length > 0 ? [elementIds[0]] : []);
+                    },
+
+                    last: function() {
+                        return createCheerioWrapperFromIds(docId, elementIds.length > 0 ? [elementIds[elementIds.length - 1]] : []);
+                    },
+
+                    next: function() {
+                        var nextIds = [];
+                        for (var i = 0; i < elementIds.length; i++) {
+                            var nextId = __cheerio_next(docId, elementIds[i]);
+                            if (nextId && nextId !== '__NONE__') {
+                                nextIds.push(nextId);
+                            }
+                        }
+                        return createCheerioWrapperFromIds(docId, nextIds);
+                    },
+
+                    prev: function() {
+                        var prevIds = [];
+                        for (var i = 0; i < elementIds.length; i++) {
+                            var prevId = __cheerio_prev(docId, elementIds[i]);
+                            if (prevId && prevId !== '__NONE__') {
+                                prevIds.push(prevId);
+                            }
+                        }
+                        return createCheerioWrapperFromIds(docId, prevIds);
+                    },
+
+                    eq: function(index) {
+                        if (index >= 0 && index < elementIds.length) {
+                            return createCheerioWrapperFromIds(docId, [elementIds[index]]);
+                        }
+                        return createCheerioWrapperFromIds(docId, []);
+                    },
+
+                    get: function(index) {
+                        if (typeof index === 'number') {
+                            if (index >= 0 && index < elementIds.length) {
+                                return createCheerioWrapperFromIds(docId, [elementIds[index]]);
+                            }
+                            return undefined;
+                        }
+                        return elementIds.map(function(id) {
+                            return createCheerioWrapperFromIds(docId, [id]);
+                        });
+                    },
+
+                    map: function(callback) {
+                        var results = [];
+                        for (var i = 0; i < elementIds.length; i++) {
+                            var elWrapper = createCheerioWrapperFromIds(docId, [elementIds[i]]);
+                            var result = callback.call(elWrapper, i, elWrapper);
+                            if (result !== undefined && result !== null) {
+                                results.push(result);
+                            }
+                        }
+                        // Return object with get() for cheerio compatibility
+                        return {
+                            length: results.length,
+                            get: function(index) {
+                                if (typeof index === 'number') {
+                                    return results[index];
+                                }
+                                return results;
+                            },
+                            toArray: function() {
+                                return results;
+                            }
+                        };
+                    },
+
+                    filter: function(selectorOrCallback) {
+                        if (typeof selectorOrCallback === 'function') {
+                            var filteredIds = [];
+                            for (var i = 0; i < elementIds.length; i++) {
+                                var elWrapper = createCheerioWrapperFromIds(docId, [elementIds[i]]);
+                                var result = selectorOrCallback.call(elWrapper, i, elWrapper);
+                                if (result) {
+                                    filteredIds.push(elementIds[i]);
+                                }
+                            }
+                            return createCheerioWrapperFromIds(docId, filteredIds);
+                        }
+                        return wrapper;
+                    },
+
+                    children: function(sel) {
+                        return this.find(sel || '*');
+                    },
+
+                    parent: function() {
+                        return createCheerioWrapperFromIds(docId, []);
+                    },
+
+                    toArray: function() {
+                        return elementIds.map(function(id) {
+                            return createCheerioWrapperFromIds(docId, [id]);
+                        });
+                    }
+                };
+
+                return wrapper;
+            }
+
+            function createCheerioWrapperFromIds(docId, ids) {
+                var wrapper = {
+                    _docId: docId,
+                    _elementIds: ids,
+                    length: ids.length,
+
+                    each: function(callback) {
+                        for (var i = 0; i < ids.length; i++) {
+                            var elWrapper = createCheerioWrapperFromIds(docId, [ids[i]]);
+                            callback.call(elWrapper, i, elWrapper);
+                        }
+                        return wrapper;
+                    },
+
+                    find: function(sel) {
+                        var allIds = [];
+                        for (var i = 0; i < ids.length; i++) {
+                            var childIdsJson = __cheerio_find(docId, ids[i], sel);
+                            var childIds = JSON.parse(childIdsJson);
+                            allIds = allIds.concat(childIds);
+                        }
+                        return createCheerioWrapperFromIds(docId, allIds);
+                    },
+
+                    text: function() {
+                        if (ids.length === 0) return '';
+                        return __cheerio_text(docId, ids.join(','));
+                    },
+
+                    html: function() {
+                        if (ids.length === 0) return '';
+                        return __cheerio_inner_html(docId, ids[0]);
+                    },
+
+                    attr: function(name) {
+                        if (ids.length === 0) return undefined;
+                        var val = __cheerio_attr(docId, ids[0], name);
+                        return val === '__UNDEFINED__' ? undefined : val;
+                    },
+
+                    first: function() {
+                        return createCheerioWrapperFromIds(docId, ids.length > 0 ? [ids[0]] : []);
+                    },
+
+                    last: function() {
+                        return createCheerioWrapperFromIds(docId, ids.length > 0 ? [ids[ids.length - 1]] : []);
+                    },
+
+                    next: function() {
+                        var nextIds = [];
+                        for (var i = 0; i < ids.length; i++) {
+                            var nextId = __cheerio_next(docId, ids[i]);
+                            if (nextId && nextId !== '__NONE__') {
+                                nextIds.push(nextId);
+                            }
+                        }
+                        return createCheerioWrapperFromIds(docId, nextIds);
+                    },
+
+                    prev: function() {
+                        var prevIds = [];
+                        for (var i = 0; i < ids.length; i++) {
+                            var prevId = __cheerio_prev(docId, ids[i]);
+                            if (prevId && prevId !== '__NONE__') {
+                                prevIds.push(prevId);
+                            }
+                        }
+                        return createCheerioWrapperFromIds(docId, prevIds);
+                    },
+
+                    eq: function(index) {
+                        if (index >= 0 && index < ids.length) {
+                            return createCheerioWrapperFromIds(docId, [ids[index]]);
+                        }
+                        return createCheerioWrapperFromIds(docId, []);
+                    },
+
+                    get: function(index) {
+                        if (typeof index === 'number') {
+                            if (index >= 0 && index < ids.length) {
+                                return createCheerioWrapperFromIds(docId, [ids[index]]);
+                            }
+                            return undefined;
+                        }
+                        return ids.map(function(id) {
+                            return createCheerioWrapperFromIds(docId, [id]);
+                        });
+                    },
+
+                    map: function(callback) {
+                        var results = [];
+                        for (var i = 0; i < ids.length; i++) {
+                            var elWrapper = createCheerioWrapperFromIds(docId, [ids[i]]);
+                            var result = callback.call(elWrapper, i, elWrapper);
+                            if (result !== undefined && result !== null) {
+                                results.push(result);
+                            }
+                        }
+                        // Return object with get() for cheerio compatibility
+                        return {
+                            length: results.length,
+                            get: function(index) {
+                                if (typeof index === 'number') {
+                                    return results[index];
+                                }
+                                return results;
+                            },
+                            toArray: function() {
+                                return results;
+                            }
+                        };
+                    },
+
+                    filter: function(selectorOrCallback) {
+                        if (typeof selectorOrCallback === 'function') {
+                            var filteredIds = [];
+                            for (var i = 0; i < ids.length; i++) {
+                                var elWrapper = createCheerioWrapperFromIds(docId, [ids[i]]);
+                                var result = selectorOrCallback.call(elWrapper, i, elWrapper);
+                                if (result) {
+                                    filteredIds.push(ids[i]);
+                                }
+                            }
+                            return createCheerioWrapperFromIds(docId, filteredIds);
+                        }
+                        return wrapper;
+                    },
+
+                    children: function(sel) {
+                        return this.find(sel || '*');
+                    },
+
+                    parent: function() {
+                        return createCheerioWrapperFromIds(docId, []);
+                    },
+
+                    toArray: function() {
+                        return ids.map(function(id) {
+                            return createCheerioWrapperFromIds(docId, [id]);
+                        });
+                    }
+                };
+
+                return wrapper;
+            }
+
+            // Require function for CommonJS modules
+            var require = function(moduleName) {
+                if (moduleName === 'cheerio' || moduleName === 'cheerio-without-node-native' || moduleName === 'react-native-cheerio') {
+                    return cheerio;
+                }
+                if (moduleName === 'crypto-js') {
+                    if (globalThis.CryptoJS) return globalThis.CryptoJS;
+                    throw new Error("Module 'crypto-js' is not loaded");
+                }
+                throw new Error("Module '" + moduleName + "' is not available");
+            };
+
+            // Array.prototype.flat polyfill
+            if (!Array.prototype.flat) {
+                Array.prototype.flat = function(depth) {
+                    depth = depth === undefined ? 1 : Math.floor(depth);
+                    if (depth < 1) return Array.prototype.slice.call(this);
+                    return (function flatten(arr, d) {
+                        return d > 0
+                            ? arr.reduce(function(acc, val) {
+                                return acc.concat(Array.isArray(val) ? flatten(val, d - 1) : val);
+                            }, [])
+                            : arr.slice();
+                    })(this, depth);
+                };
+            }
+
+            // Array.prototype.flatMap polyfill
+            if (!Array.prototype.flatMap) {
+                Array.prototype.flatMap = function(callback, thisArg) {
+                    return this.map(callback, thisArg).flat();
+                };
+            }
+
+            // Object.entries polyfill
+            if (!Object.entries) {
+                Object.entries = function(obj) {
+                    var result = [];
+                    for (var key in obj) {
+                        if (obj.hasOwnProperty(key)) {
+                            result.push([key, obj[key]]);
+                        }
+                    }
+                    return result;
+                };
+            }
+
+            // Object.fromEntries polyfill
+            if (!Object.fromEntries) {
+                Object.fromEntries = function(entries) {
+                    var result = {};
+                    for (var i = 0; i < entries.length; i++) {
+                        result[entries[i][0]] = entries[i][1];
+                    }
+                    return result;
+                };
+            }
+
+            // String.prototype.replaceAll polyfill
+            if (!String.prototype.replaceAll) {
+                String.prototype.replaceAll = function(search, replace) {
+                    if (search instanceof RegExp) {
+                        if (!search.global) {
+                            throw new TypeError('replaceAll must be called with a global RegExp');
+                        }
+                        return this.replace(search, replace);
+                    }
+                    return this.split(search).join(replace);
+                };
+            }
+        """.trimIndent()
+    }
+
+    private fun parseJsonResults(json: String): List<LocalScraperResult> {
+        return try {
+            val listType = object : com.google.gson.reflect.TypeToken<List<Map<String, Any?>>>() {}.type
+            val results: List<Map<String, Any?>>? = gson.fromJson(json, listType)
+            results?.mapNotNull { item ->
+                // Handle URL - could be string or object with url property
+                val urlValue = item["url"]
+                val url = when (urlValue) {
+                    is String -> urlValue.takeIf { it.isNotBlank() && !it.contains("[object") }
+                    is Map<*, *> -> (urlValue["url"] as? String)?.takeIf { it.isNotBlank() }
+                    else -> null
+                } ?: return@mapNotNull null
+                
+                // Parse headers if present
+                val headersValue = item["headers"]
+                val headers: Map<String, String>? = when (headersValue) {
+                    is Map<*, *> -> headersValue.entries
+                        .filter { it.key is String && it.value is String }
+                        .associate { (it.key as String) to (it.value as String) }
+                        .takeIf { it.isNotEmpty() }
+                    else -> null
+                }
+                
+                LocalScraperResult(
+                    title = item["title"]?.toString()?.takeIf { !it.contains("[object") } 
+                        ?: item["name"]?.toString()?.takeIf { !it.contains("[object") } 
+                        ?: "Unknown",
+                    name = item["name"]?.toString()?.takeIf { !it.contains("[object") },
+                    url = url,
+                    quality = item["quality"]?.toString()?.takeIf { !it.contains("[object") },
+                    size = item["size"]?.toString()?.takeIf { !it.contains("[object") },
+                    language = item["language"]?.toString()?.takeIf { !it.contains("[object") },
+                    provider = item["provider"]?.toString()?.takeIf { !it.contains("[object") },
+                    type = item["type"]?.toString()?.takeIf { !it.contains("[object") },
+                    seeders = (item["seeders"] as? Number)?.toInt(),
+                    peers = (item["peers"] as? Number)?.toInt(),
+                    infoHash = item["infoHash"]?.toString()?.takeIf { !it.contains("[object") },
+                    headers = headers
+                )
+            }?.filter { it.url.isNotBlank() } ?: emptyList()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse results: ${e.message}")
+            emptyList()
         }
     }
 }

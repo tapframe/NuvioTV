@@ -13,14 +13,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -47,6 +51,16 @@ class PluginManager @Inject constructor(
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
+
+    private fun sha256Hex(text: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
+        val sb = StringBuilder(digest.size * 2)
+        for (b in digest) {
+            sb.append(((b.toInt() shr 4) and 0xF).toString(16))
+            sb.append((b.toInt() and 0xF).toString(16))
+        }
+        return sb.toString()
+    }
     
     // Single-flight map to prevent duplicate scraper executions
     private val inFlightScrapers = ConcurrentHashMap<String, kotlinx.coroutines.Deferred<List<LocalScraperResult>>>()
@@ -207,6 +221,40 @@ class PluginManager @Inject constructor(
     }
     
     /**
+     * Execute all enabled scrapers and emit results as each scraper completes.
+     * Returns a Flow that emits (scraperName, results) pairs.
+     */
+    fun executeScrapersStreaming(
+        tmdbId: String,
+        mediaType: String,
+        season: Int? = null,
+        episode: Int? = null
+    ): Flow<Pair<String, List<LocalScraperResult>>> = channelFlow {
+        val enabledList = enabledScrapers.first()
+            .filter { it.supportsType(mediaType) }
+        
+        if (enabledList.isEmpty() || !dataStore.pluginsEnabled.first()) {
+            return@channelFlow
+        }
+        
+        Log.d(TAG, "Streaming execution of ${enabledList.size} scrapers for $mediaType:$tmdbId")
+        
+        // Launch all scrapers concurrently within the channelFlow scope
+        enabledList.forEach { scraper ->
+            launch {
+                try {
+                    val results = executeScraperWithSingleFlight(scraper, tmdbId, mediaType, season, episode)
+                    if (results.isNotEmpty()) {
+                        send(scraper.name to results)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Scraper ${scraper.name} failed in streaming: ${e.message}")
+                }
+            }
+        }
+    }
+    
+    /**
      * Execute a single scraper with single-flight deduplication
      */
     private suspend fun executeScraperWithSingleFlight(
@@ -264,6 +312,20 @@ class PluginManager @Inject constructor(
             if (code.isNullOrBlank()) {
                 Log.w(TAG, "No code found for scraper: ${scraper.name}")
                 return emptyList()
+            }
+
+            // Debug: confirm which exact JS code is running on-device.
+            try {
+                val sha = sha256Hex(code)
+                val bytes = code.toByteArray(Charsets.UTF_8).size
+                val hasHrefliLogs = code.contains("[UHDMovies][Hrefli]", ignoreCase = false) ||
+                    code.contains("[Hrefli]", ignoreCase = false)
+                Log.d(
+                    TAG,
+                    "Scraper code loaded: ${scraper.name}(${scraper.id}) bytes=$bytes sha256=${sha.take(12)} hrefliLogs=$hasHrefliLogs"
+                )
+            } catch (_: Exception) {
+                // ignore
             }
             
             val settings = dataStore.getScraperSettings(scraper.id)
@@ -372,6 +434,18 @@ class PluginManager @Inject constructor(
                 }
                 
                 val code = codeResponse.body?.string() ?: return@forEach
+
+                try {
+                    val sha = sha256Hex(code)
+                    val hasHrefliLogs = code.contains("[UHDMovies][Hrefli]", ignoreCase = false) ||
+                        code.contains("[Hrefli]", ignoreCase = false)
+                    Log.d(
+                        TAG,
+                        "Downloaded scraper code: ${info.name}(${info.id}) bytes=${code.toByteArray(Charsets.UTF_8).size} sha256=${sha.take(12)} hrefliLogs=$hasHrefliLogs url=$codeUrl"
+                    )
+                } catch (_: Exception) {
+                    // ignore
+                }
                 
                 // Create scraper info
                 val scraperId = "$repoId:${info.id}"

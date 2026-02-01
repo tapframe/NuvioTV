@@ -4,30 +4,44 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.tv.material3.ExperimentalTvMaterial3Api
+import androidx.tv.material3.DrawerValue
+import androidx.tv.material3.Icon
+import androidx.tv.material3.NavigationDrawer
+import androidx.tv.material3.NavigationDrawerItem
+import androidx.tv.material3.Text
+import androidx.tv.material3.rememberDrawerState
 import androidx.tv.material3.Surface
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import com.nuvio.tv.ui.components.SidebarItem
-import com.nuvio.tv.ui.components.SidebarNavigation
+import coil.compose.AsyncImage
 import com.nuvio.tv.ui.navigation.NuvioNavHost
 import com.nuvio.tv.ui.navigation.Screen
 import com.nuvio.tv.ui.theme.NuvioTheme
@@ -47,9 +61,7 @@ class MainActivity : ComponentActivity() {
                     val navController = rememberNavController()
                     val navBackStackEntry by navController.currentBackStackEntryAsState()
                     val currentRoute = navBackStackEntry?.destination?.route
-                    val sidebarFocusRequester = remember { FocusRequester() }
-                    var isSidebarExpanded by remember { mutableStateOf(false) }
-                    var isSidebarFocused by remember { mutableStateOf(false) }
+                    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
 
                     val rootRoutes = setOf(
                         Screen.Home.route,
@@ -60,60 +72,90 @@ class MainActivity : ComponentActivity() {
 
                     LaunchedEffect(currentRoute) {
                         if (currentRoute in rootRoutes) {
-                            if (!isSidebarFocused) {
-                                isSidebarExpanded = false
-                            }
+                            drawerState.setValue(DrawerValue.Closed)
                         } else {
-                            isSidebarExpanded = false
+                            drawerState.setValue(DrawerValue.Closed)
                         }
                     }
 
-                    BackHandler(enabled = currentRoute in rootRoutes && !isSidebarFocused) {
-                        isSidebarExpanded = true
-                        sidebarFocusRequester.requestFocus()
+                    BackHandler(enabled = currentRoute in rootRoutes && drawerState.currentValue == DrawerValue.Closed) {
+                        drawerState.setValue(DrawerValue.Open)
                     }
 
-                    val sidebarItems = listOf(
-                        SidebarItem(route = Screen.Home.route, label = "Home", icon = Icons.Filled.Home),
-                        SidebarItem(route = Screen.Search.route, label = "Search", icon = Icons.Filled.Search),
-                        SidebarItem(route = Screen.AddonManager.route, label = "Addons", icon = Icons.Filled.Extension),
-                        SidebarItem(route = Screen.Settings.route, label = "Settings", icon = Icons.Filled.Settings)
+                    val drawerItems = listOf(
+                        Screen.Home.route to ("Home" to Icons.Filled.Home),
+                        Screen.Search.route to ("Search" to Icons.Filled.Search),
+                        Screen.AddonManager.route to ("Addons" to Icons.Filled.Extension),
+                        Screen.Settings.route to ("Settings" to Icons.Filled.Settings)
                     )
 
                     val showSidebar = currentRoute in rootRoutes
-                    val sidebarWidth by animateDpAsState(
-                        targetValue = if (showSidebar && isSidebarExpanded) 260.dp else 0.dp,
-                        label = "sidebarPadding"
-                    )
-
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        if (showSidebar) {
-                            SidebarNavigation(
-                                items = sidebarItems,
-                                selectedRoute = currentRoute,
-                                isExpanded = isSidebarExpanded,
-                                onExpandedChange = { expanded -> isSidebarExpanded = expanded },
-                                focusRequester = sidebarFocusRequester,
-                                onFocusChange = { focused -> isSidebarFocused = focused },
-                                onNavigate = { route ->
-                                    if (currentRoute != route) {
-                                        navController.navigate(route) {
-                                            popUpTo(navController.graph.startDestinationId) {
-                                                saveState = true
+                    if (showSidebar) {
+                        NavigationDrawer(
+                            drawerState = drawerState,
+                            drawerContent = { drawerValue ->
+                                val drawerWidth = if (drawerValue == DrawerValue.Open) 260.dp else 72.dp
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxHeight()
+                                        .width(drawerWidth)
+                                        .background(
+                                            Brush.horizontalGradient(
+                                                colors = listOf(
+                                                    Color.Black.copy(alpha = 0.7f),
+                                                    Color.Black.copy(alpha = 0.35f),
+                                                    Color.Transparent
+                                                )
+                                            )
+                                        )
+                                        .padding(12.dp)
+                                        .selectableGroup(),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    if (drawerValue == DrawerValue.Open) {
+                                        Image(
+                                            painter = painterResource(id = R.drawable.nuvio_text),
+                                            contentDescription = "Nuvio",
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(48.dp),
+                                            contentScale = ContentScale.Fit
+                                        )
+                                    }
+                                    drawerItems.forEach { (route, item) ->
+                                        val (label, icon) = item
+                                        NavigationDrawerItem(
+                                            selected = currentRoute == route,
+                                            onClick = {
+                                                if (currentRoute != route) {
+                                                    navController.navigate(route) {
+                                                        popUpTo(navController.graph.startDestinationId) {
+                                                            saveState = true
+                                                        }
+                                                        launchSingleTop = true
+                                                        restoreState = true
+                                                    }
+                                                }
+                                                drawerState.setValue(DrawerValue.Closed)
+                                            },
+                                            leadingContent = {
+                                                Icon(imageVector = icon, contentDescription = null)
                                             }
-                                            launchSingleTop = true
-                                            restoreState = true
+                                        ) {
+                                            if (drawerValue == DrawerValue.Open) {
+                                                Text(label)
+                                            }
                                         }
                                     }
                                 }
-                            )
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(start = sidebarWidth)
+                            }
                         ) {
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                NuvioNavHost(navController = navController)
+                            }
+                        }
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize()) {
                             NuvioNavHost(navController = navController)
                         }
                     }

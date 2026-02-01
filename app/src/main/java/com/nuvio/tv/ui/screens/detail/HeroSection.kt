@@ -165,15 +165,15 @@ private fun PlayButton(
         modifier = Modifier
             .onFocusChanged { isFocused = it.isFocused },
         colors = ButtonDefaults.colors(
-            containerColor = NuvioColors.BackgroundCard,
-            focusedContainerColor = NuvioColors.Primary,
-            contentColor = NuvioColors.TextPrimary,
-            focusedContentColor = NuvioColors.OnPrimary
+            containerColor = androidx.compose.ui.graphics.Color.White,
+            focusedContainerColor = androidx.compose.ui.graphics.Color(0xFFD0D0D0),
+            contentColor = androidx.compose.ui.graphics.Color.Black,
+            focusedContentColor = androidx.compose.ui.graphics.Color.Black
         ),
         shape = ButtonDefaults.shape(
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(32.dp)
         ),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)
+        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 14.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
