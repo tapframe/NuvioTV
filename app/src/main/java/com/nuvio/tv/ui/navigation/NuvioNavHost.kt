@@ -48,7 +48,7 @@ fun NuvioNavHost(
         ) { backStackEntry ->
             MetaDetailsScreen(
                 onBackPress = { navController.popBackStack() },
-                onPlayClick = { videoId, contentType, title, poster, backdrop, logo, season, episode, episodeName, genres, year ->
+                onPlayClick = { videoId, contentType, contentId, title, poster, backdrop, logo, season, episode, episodeName, genres, year ->
                     navController.navigate(
                         Screen.Stream.createRoute(
                             videoId = videoId,
@@ -61,7 +61,9 @@ fun NuvioNavHost(
                             episode = episode,
                             episodeName = episodeName,
                             genres = genres,
-                            year = year
+                            year = year,
+                            contentId = contentId,
+                            contentName = title
                         )
                     )
                 }
@@ -113,6 +115,16 @@ fun NuvioNavHost(
                     type = NavType.StringType
                     nullable = true
                     defaultValue = null
+                },
+                navArgument("contentId") { 
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("contentName") { 
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
                 }
             )
         ) {
@@ -124,7 +136,17 @@ fun NuvioNavHost(
                             Screen.Player.createRoute(
                                 streamUrl = url,
                                 title = playbackInfo.title,
-                                headers = playbackInfo.headers
+                                headers = playbackInfo.headers,
+                                contentId = playbackInfo.contentId,
+                                contentType = playbackInfo.contentType,
+                                contentName = playbackInfo.contentName,
+                                poster = playbackInfo.poster,
+                                backdrop = playbackInfo.backdrop,
+                                logo = playbackInfo.logo,
+                                videoId = playbackInfo.videoId,
+                                season = playbackInfo.season,
+                                episode = playbackInfo.episode,
+                                episodeTitle = playbackInfo.episodeTitle
                             )
                         )
                     }
@@ -138,6 +160,56 @@ fun NuvioNavHost(
                 navArgument("streamUrl") { type = NavType.StringType },
                 navArgument("title") { type = NavType.StringType },
                 navArgument("headers") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("contentId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("contentType") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("contentName") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("poster") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("backdrop") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("logo") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("videoId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("season") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("episode") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("episodeTitle") {
                     type = NavType.StringType
                     nullable = true
                     defaultValue = null

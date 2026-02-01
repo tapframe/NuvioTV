@@ -6,13 +6,16 @@ import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.domain.model.Addon
 import com.nuvio.tv.domain.model.CatalogDescriptor
 import com.nuvio.tv.domain.model.CatalogRow
+import com.nuvio.tv.domain.model.WatchProgress
 import com.nuvio.tv.domain.repository.AddonRepository
 import com.nuvio.tv.domain.repository.CatalogRepository
+import com.nuvio.tv.domain.repository.WatchProgressRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -21,7 +24,8 @@ import javax.inject.Inject
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val addonRepository: AddonRepository,
-    private val catalogRepository: CatalogRepository
+    private val catalogRepository: CatalogRepository,
+    private val watchProgressRepository: WatchProgressRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -31,6 +35,7 @@ class HomeViewModel @Inject constructor(
     private val catalogOrder = mutableListOf<String>()
 
     init {
+        loadContinueWatching()
         loadAllCatalogs()
     }
 
@@ -39,6 +44,14 @@ class HomeViewModel @Inject constructor(
             is HomeEvent.OnItemClick -> navigateToDetail(event.itemId, event.itemType)
             is HomeEvent.OnLoadMoreCatalog -> loadMoreCatalogItems(event.catalogId, event.addonId, event.type)
             HomeEvent.OnRetry -> loadAllCatalogs()
+        }
+    }
+
+    private fun loadContinueWatching() {
+        viewModelScope.launch {
+            watchProgressRepository.continueWatching.collectLatest { items ->
+                _uiState.update { it.copy(continueWatchingItems = items) }
+            }
         }
     }
 

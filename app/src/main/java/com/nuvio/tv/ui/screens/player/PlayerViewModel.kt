@@ -17,6 +17,8 @@ import androidx.media3.exoplayer.dash.DashMediaSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.common.MimeTypes
+import com.nuvio.tv.domain.model.WatchProgress
+import com.nuvio.tv.domain.repository.WatchProgressRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
@@ -24,6 +26,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -33,6 +36,7 @@ import javax.inject.Inject
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val watchProgressRepository: WatchProgressRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -46,6 +50,34 @@ class PlayerViewModel @Inject constructor(
         if (it.isNotEmpty()) URLDecoder.decode(it, "UTF-8") else null
     }
 
+    // Watch progress metadata
+    private val contentId: String? = savedStateHandle.get<String>("contentId")?.let {
+        if (it.isNotEmpty()) URLDecoder.decode(it, "UTF-8") else null
+    }
+    private val contentType: String? = savedStateHandle.get<String>("contentType")?.let {
+        if (it.isNotEmpty()) URLDecoder.decode(it, "UTF-8") else null
+    }
+    private val contentName: String? = savedStateHandle.get<String>("contentName")?.let {
+        if (it.isNotEmpty()) URLDecoder.decode(it, "UTF-8") else null
+    }
+    private val poster: String? = savedStateHandle.get<String>("poster")?.let {
+        if (it.isNotEmpty()) URLDecoder.decode(it, "UTF-8") else null
+    }
+    private val backdrop: String? = savedStateHandle.get<String>("backdrop")?.let {
+        if (it.isNotEmpty()) URLDecoder.decode(it, "UTF-8") else null
+    }
+    private val logo: String? = savedStateHandle.get<String>("logo")?.let {
+        if (it.isNotEmpty()) URLDecoder.decode(it, "UTF-8") else null
+    }
+    private val videoId: String? = savedStateHandle.get<String>("videoId")?.let {
+        if (it.isNotEmpty()) URLDecoder.decode(it, "UTF-8") else null
+    }
+    private val season: Int? = savedStateHandle.get<String>("season")?.toIntOrNull()
+    private val episode: Int? = savedStateHandle.get<String>("episode")?.toIntOrNull()
+    private val episodeTitle: String? = savedStateHandle.get<String>("episodeTitle")?.let {
+        if (it.isNotEmpty()) URLDecoder.decode(it, "UTF-8") else null
+    }
+
     private val _uiState = MutableStateFlow(PlayerUiState(title = title))
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
@@ -55,9 +87,42 @@ class PlayerViewModel @Inject constructor(
 
     private var progressJob: Job? = null
     private var hideControlsJob: Job? = null
+    private var watchProgressSaveJob: Job? = null
+    
+    // Track last saved position to avoid redundant saves
+    private var lastSavedPosition: Long = 0L
+    private val saveThresholdMs = 5000L // Save every 5 seconds of playback change
 
     init {
         initializePlayer()
+        loadSavedProgress()
+    }
+
+    private fun loadSavedProgress() {
+        if (contentId == null) return
+        
+        viewModelScope.launch {
+            val progress = if (season != null && episode != null) {
+                watchProgressRepository.getEpisodeProgress(contentId, season, episode).first()
+            } else {
+                watchProgressRepository.getProgress(contentId).first()
+            }
+            
+            progress?.let { saved ->
+                // Only seek if we have a meaningful position (more than 2% but less than 90%)
+                if (saved.isInProgress()) {
+                    _exoPlayer?.let { player ->
+                        // Wait for player to be ready before seeking
+                        if (player.playbackState == Player.STATE_READY) {
+                            player.seekTo(saved.position)
+                        } else {
+                            // Set a flag to seek when ready
+                            _uiState.update { it.copy(pendingSeekPosition = saved.position) }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private fun initializePlayer() {
@@ -131,15 +196,32 @@ class PlayerViewModel @Inject constructor(
                                 duration = duration.coerceAtLeast(0L)
                             )
                         }
+                        
+                        // Handle pending seek position when player is ready
+                        if (playbackState == Player.STATE_READY) {
+                            _uiState.value.pendingSeekPosition?.let { position ->
+                                seekTo(position)
+                                _uiState.update { it.copy(pendingSeekPosition = null) }
+                            }
+                        }
+                        
+                        // Save progress when playback ends
+                        if (playbackState == Player.STATE_ENDED) {
+                            saveWatchProgress()
+                        }
                     }
 
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
                         _uiState.update { it.copy(isPlaying = isPlaying) }
                         if (isPlaying) {
                             startProgressUpdates()
+                            startWatchProgressSaving()
                             scheduleHideControls()
                         } else {
                             stopProgressUpdates()
+                            stopWatchProgressSaving()
+                            // Save progress when paused
+                            saveWatchProgress()
                         }
                     }
 
@@ -252,6 +334,67 @@ class PlayerViewModel @Inject constructor(
     private fun stopProgressUpdates() {
         progressJob?.cancel()
         progressJob = null
+    }
+
+    private fun startWatchProgressSaving() {
+        watchProgressSaveJob?.cancel()
+        watchProgressSaveJob = viewModelScope.launch {
+            while (isActive) {
+                delay(10000) // Save every 10 seconds
+                saveWatchProgressIfNeeded()
+            }
+        }
+    }
+
+    private fun stopWatchProgressSaving() {
+        watchProgressSaveJob?.cancel()
+        watchProgressSaveJob = null
+    }
+
+    private fun saveWatchProgressIfNeeded() {
+        val currentPosition = _exoPlayer?.currentPosition ?: return
+        val duration = _exoPlayer?.duration ?: return
+        
+        // Only save if position has changed significantly
+        if (kotlin.math.abs(currentPosition - lastSavedPosition) >= saveThresholdMs) {
+            lastSavedPosition = currentPosition
+            saveWatchProgressInternal(currentPosition, duration)
+        }
+    }
+
+    private fun saveWatchProgress() {
+        val currentPosition = _exoPlayer?.currentPosition ?: return
+        val duration = _exoPlayer?.duration ?: return
+        saveWatchProgressInternal(currentPosition, duration)
+    }
+
+    private fun saveWatchProgressInternal(position: Long, duration: Long) {
+        // Don't save if we don't have content metadata
+        if (contentId.isNullOrEmpty() || contentType.isNullOrEmpty()) return
+        // Don't save if duration is invalid
+        if (duration <= 0) return
+        // Don't save if position is too early (less than 1 second)
+        if (position < 1000) return
+
+        val progress = WatchProgress(
+            contentId = contentId,
+            contentType = contentType,
+            name = contentName ?: title,
+            poster = poster,
+            backdrop = backdrop,
+            logo = logo,
+            videoId = videoId ?: contentId,
+            season = season,
+            episode = episode,
+            episodeTitle = episodeTitle,
+            position = position,
+            duration = duration,
+            lastWatched = System.currentTimeMillis()
+        )
+
+        viewModelScope.launch {
+            watchProgressRepository.saveProgress(progress)
+        }
     }
 
     private fun scheduleHideControls() {
@@ -417,8 +560,12 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun releasePlayer() {
+        // Save progress before releasing
+        saveWatchProgress()
+        
         progressJob?.cancel()
         hideControlsJob?.cancel()
+        watchProgressSaveJob?.cancel()
         _exoPlayer?.release()
         _exoPlayer = null
     }

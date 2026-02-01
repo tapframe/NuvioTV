@@ -4,10 +4,12 @@ import com.nuvio.tv.data.repository.AddonRepositoryImpl
 import com.nuvio.tv.data.repository.CatalogRepositoryImpl
 import com.nuvio.tv.data.repository.MetaRepositoryImpl
 import com.nuvio.tv.data.repository.StreamRepositoryImpl
+import com.nuvio.tv.data.repository.WatchProgressRepositoryImpl
 import com.nuvio.tv.domain.repository.AddonRepository
 import com.nuvio.tv.domain.repository.CatalogRepository
 import com.nuvio.tv.domain.repository.MetaRepository
 import com.nuvio.tv.domain.repository.StreamRepository
+import com.nuvio.tv.domain.repository.WatchProgressRepository
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -33,4 +35,8 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindStreamRepository(impl: StreamRepositoryImpl): StreamRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindWatchProgressRepository(impl: WatchProgressRepositoryImpl): WatchProgressRepository
 }

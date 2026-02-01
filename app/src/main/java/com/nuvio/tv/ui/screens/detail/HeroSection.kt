@@ -43,12 +43,14 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.ui.platform.LocalContext
 import coil.decode.SvgDecoder
 import coil.request.ImageRequest
+import com.nuvio.tv.domain.model.NextToWatch
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun HeroContentSection(
     meta: Meta,
     nextEpisode: Video?,
+    nextToWatch: NextToWatch?,
     onPlayClick: () -> Unit,
     isInLibrary: Boolean,
     onToggleLibrary: () -> Unit
@@ -90,10 +92,9 @@ fun HeroContentSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 PlayButton(
-                    text = if (nextEpisode != null) {
-                        "Play S${nextEpisode.season}, E${nextEpisode.episode}"
-                    } else {
-                        "Play"
+                    text = nextToWatch?.displayText ?: when {
+                        nextEpisode != null -> "Play S${nextEpisode.season}, E${nextEpisode.episode}"
+                        else -> "Play"
                     },
                     onClick = onPlayClick
                 )

@@ -31,6 +31,8 @@ class StreamScreenViewModel @Inject constructor(
     private val episodeName: String? = savedStateHandle["episodeName"]
     private val genres: String? = savedStateHandle["genres"]
     private val year: String? = savedStateHandle["year"]
+    private val contentId: String? = savedStateHandle["contentId"]
+    private val contentName: String? = savedStateHandle["contentName"]
 
     private val _uiState = MutableStateFlow(
         StreamScreenUiState(
@@ -140,7 +142,17 @@ class StreamScreenViewModel @Inject constructor(
             isTorrent = stream.isTorrent(),
             infoHash = stream.infoHash,
             ytId = stream.ytId,
-            headers = stream.behaviorHints?.proxyHeaders?.request
+            headers = stream.behaviorHints?.proxyHeaders?.request,
+            contentId = contentId ?: videoId.substringBefore(":"),  // Use explicit contentId or extract from videoId
+            contentType = contentType,
+            contentName = contentName ?: title,
+            poster = poster,
+            backdrop = backdrop,
+            logo = logo,
+            videoId = videoId,
+            season = season,
+            episode = episode,
+            episodeTitle = episodeName
         )
     }
 }
@@ -152,5 +164,16 @@ data class StreamPlaybackInfo(
     val isTorrent: Boolean,
     val infoHash: String?,
     val ytId: String?,
-    val headers: Map<String, String>?
+    val headers: Map<String, String>?,
+    // Watch progress metadata
+    val contentId: String?,
+    val contentType: String?,
+    val contentName: String?,
+    val poster: String?,
+    val backdrop: String?,
+    val logo: String?,
+    val videoId: String?,
+    val season: Int?,
+    val episode: Int?,
+    val episodeTitle: String?
 )

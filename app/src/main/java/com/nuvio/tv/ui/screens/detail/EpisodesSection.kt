@@ -112,6 +112,7 @@ fun SeasonTabs(
 @Composable
 fun EpisodesRow(
     episodes: List<Video>,
+    episodeProgressMap: Map<Pair<Int, Int>, com.nuvio.tv.domain.model.WatchProgress> = emptyMap(),
     onEpisodeClick: (Video) -> Unit,
     upFocusRequester: FocusRequester
 ) {
@@ -122,8 +123,14 @@ fun EpisodesRow(
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         items(episodes, key = { it.id }) { episode ->
+            val progress = episode.season?.let { s ->
+                episode.episode?.let { e ->
+                    episodeProgressMap[s to e]
+                }
+            }
             EpisodeCard(
                 episode = episode,
+                watchProgress = progress,
                 onClick = { onEpisodeClick(episode) },
                 upFocusRequester = upFocusRequester
             )
@@ -135,6 +142,7 @@ fun EpisodesRow(
 @Composable
 private fun EpisodeCard(
     episode: Video,
+    watchProgress: com.nuvio.tv.domain.model.WatchProgress? = null,
     onClick: () -> Unit,
     upFocusRequester: FocusRequester
 ) {
@@ -178,6 +186,19 @@ private fun EpisodeCard(
                     contentScale = ContentScale.Crop
                 )
 
+                // Show watched/in-progress indicator
+                val indicatorColor = when {
+                    watchProgress?.isCompleted() == true -> NuvioColors.Primary.copy(alpha = 0.8f)
+                    watchProgress?.isInProgress() == true -> NuvioColors.Primary
+                    else -> NuvioColors.Primary
+                }
+                
+                val indicatorText = when {
+                    watchProgress?.isCompleted() == true -> "✓"
+                    watchProgress?.isInProgress() == true -> "◉"
+                    else -> "◉"
+                }
+
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopStart)
@@ -187,10 +208,30 @@ private fun EpisodeCard(
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     Text(
-                        text = "◉",
+                        text = indicatorText,
                         style = MaterialTheme.typography.labelSmall,
-                        color = NuvioColors.Primary
+                        color = indicatorColor
                     )
+                }
+
+                // Progress bar overlay at bottom of thumbnail
+                watchProgress?.let { progress ->
+                    if (progress.isInProgress()) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .fillMaxWidth()
+                                .height(4.dp)
+                                .background(NuvioColors.Background.copy(alpha = 0.5f))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(progress.progressPercentage)
+                                    .height(4.dp)
+                                    .background(NuvioColors.Primary)
+                            )
+                        }
+                    }
                 }
             }
 

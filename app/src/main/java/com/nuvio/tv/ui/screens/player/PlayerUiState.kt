@@ -18,7 +18,8 @@ data class PlayerUiState(
     val showAudioDialog: Boolean = false,
     val showSubtitleDialog: Boolean = false,
     val showSpeedDialog: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val pendingSeekPosition: Long? = null  // For resuming from saved progress
 )
 
 data class TrackInfo(

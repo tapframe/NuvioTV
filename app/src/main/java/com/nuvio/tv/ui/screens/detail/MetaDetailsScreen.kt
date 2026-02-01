@@ -30,7 +30,9 @@ import coil.compose.AsyncImage
 import com.nuvio.tv.domain.model.ContentType
 import com.nuvio.tv.domain.model.Meta
 import com.nuvio.tv.domain.model.MetaCastMember
+import com.nuvio.tv.domain.model.NextToWatch
 import com.nuvio.tv.domain.model.Video
+import com.nuvio.tv.domain.model.WatchProgress
 import com.nuvio.tv.ui.components.ErrorState
 import com.nuvio.tv.ui.components.LoadingIndicator
 import com.nuvio.tv.ui.theme.NuvioColors
@@ -43,6 +45,7 @@ fun MetaDetailsScreen(
     onPlayClick: (
         videoId: String,
         contentType: String,
+        contentId: String,
         title: String,
         poster: String?,
         backdrop: String?,
@@ -52,7 +55,7 @@ fun MetaDetailsScreen(
         episodeName: String?,
         genres: String?,
         year: String?
-    ) -> Unit = { _, _, _, _, _, _, _, _, _, _, _ -> }
+    ) -> Unit = { _, _, _, _, _, _, _, _, _, _, _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
@@ -91,12 +94,15 @@ fun MetaDetailsScreen(
                     selectedSeason = uiState.selectedSeason,
                     episodesForSeason = uiState.episodesForSeason,
                     isInLibrary = uiState.isInLibrary,
+                    nextToWatch = uiState.nextToWatch,
+                    episodeProgressMap = uiState.episodeProgressMap,
                     onSeasonSelected = { viewModel.onEvent(MetaDetailsEvent.OnSeasonSelected(it)) },
                     onEpisodeClick = { video ->
                         // Navigate to stream screen for episode
                         onPlayClick(
                             video.id,
                             meta.type.toApiString(),
+                            meta.id,
                             meta.name,
                             video.thumbnail ?: meta.poster,
                             meta.background,
@@ -113,6 +119,7 @@ fun MetaDetailsScreen(
                         onPlayClick(
                             videoId,
                             meta.type.toApiString(),
+                            meta.id,
                             meta.name,
                             meta.poster,
                             meta.background,
@@ -139,6 +146,8 @@ private fun MetaDetailsContent(
     selectedSeason: Int,
     episodesForSeason: List<Video>,
     isInLibrary: Boolean,
+    nextToWatch: NextToWatch?,
+    episodeProgressMap: Map<Pair<Int, Int>, WatchProgress>,
     onSeasonSelected: (Int) -> Unit,
     onEpisodeClick: (Video) -> Unit,
     onPlayClick: (String) -> Unit,
@@ -224,8 +233,10 @@ private fun MetaDetailsContent(
                 HeroContentSection(
                     meta = meta,
                     nextEpisode = nextEpisode,
+                    nextToWatch = nextToWatch,
                     onPlayClick = {
-                        val videoId = if (isSeries && nextEpisode != null) {
+                        // Use nextToWatch's video ID if available, otherwise fall back to logic
+                        val videoId = nextToWatch?.nextVideoId ?: if (isSeries && nextEpisode != null) {
                             nextEpisode.id
                         } else {
                             meta.id
@@ -250,6 +261,7 @@ private fun MetaDetailsContent(
                 item {
                     EpisodesRow(
                         episodes = episodesForSeason,
+                        episodeProgressMap = episodeProgressMap,
                         onEpisodeClick = onEpisodeClick,
                         upFocusRequester = selectedSeasonFocusRequester
                     )

@@ -20,6 +20,7 @@ import androidx.tv.foundation.lazy.list.itemsIndexed
 import androidx.tv.foundation.lazy.list.rememberTvLazyListState
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import com.nuvio.tv.ui.components.CatalogRowSection
+import com.nuvio.tv.ui.components.ContinueWatchingSection
 import com.nuvio.tv.ui.components.ErrorState
 import com.nuvio.tv.ui.components.LoadingIndicator
 import com.nuvio.tv.ui.theme.NuvioColors
@@ -65,14 +66,33 @@ fun HomeScreen(
                     contentPadding = PaddingValues(vertical = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(32.dp)
                 ) {
+                    // Continue Watching section at the top
+                    if (uiState.continueWatchingItems.isNotEmpty()) {
+                        item(key = "continue_watching") {
+                            ContinueWatchingSection(
+                                items = uiState.continueWatchingItems,
+                                onItemClick = { progress ->
+                                    onNavigateToDetail(
+                                        progress.contentId,
+                                        progress.contentType,
+                                        ""  // No specific addon
+                                    )
+                                }
+                            )
+                        }
+                    }
+                    
                     itemsIndexed(
                         items = uiState.catalogRows,
                         key = { _, item -> "${item.addonId}_${item.type}_${item.catalogId}" }
                     ) { index, catalogRow ->
+                        // Adjust index to account for continue watching section
+                        val adjustedIndex = if (uiState.continueWatchingItems.isNotEmpty()) index + 1 else index
+                        
                         CatalogRowSection(
                             catalogRow = catalogRow,
-                            rowIndex = index,
-                            isRestoreFocus = index == focusedRowIndex,
+                            rowIndex = adjustedIndex,
+                            isRestoreFocus = adjustedIndex == focusedRowIndex,
                             onItemClick = { id, type, addonBaseUrl ->
                                 onNavigateToDetail(id, type, addonBaseUrl)
                             },

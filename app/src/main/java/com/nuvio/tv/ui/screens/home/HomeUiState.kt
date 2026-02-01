@@ -1,9 +1,11 @@
 package com.nuvio.tv.ui.screens.home
 
 import com.nuvio.tv.domain.model.CatalogRow
+import com.nuvio.tv.domain.model.WatchProgress
 
 data class HomeUiState(
     val catalogRows: List<CatalogRow> = emptyList(),
+    val continueWatchingItems: List<WatchProgress> = emptyList(),
     val isLoading: Boolean = true,
     val error: String? = null,
     val selectedItemId: String? = null
