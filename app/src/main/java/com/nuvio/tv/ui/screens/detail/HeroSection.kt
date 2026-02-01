@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,8 +38,8 @@ import com.nuvio.tv.ui.theme.NuvioColors
 import com.nuvio.tv.ui.theme.NuvioTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.ui.platform.LocalContext
 import coil.decode.SvgDecoder
 import coil.request.ImageRequest
@@ -48,7 +49,9 @@ import coil.request.ImageRequest
 fun HeroContentSection(
     meta: Meta,
     nextEpisode: Video?,
-    onPlayClick: () -> Unit
+    onPlayClick: () -> Unit,
+    isInLibrary: Boolean,
+    onToggleLibrary: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -96,15 +99,9 @@ fun HeroContentSection(
                 )
 
                 ActionIconButton(
-                    icon = Icons.AutoMirrored.Filled.List,
-                    contentDescription = "Shuffle",
-                    onClick = { }
-                )
-
-                ActionIconButton(
-                    icon = Icons.Default.Add,
-                    contentDescription = "Add to list",
-                    onClick = { }
+                    icon = if (isInLibrary) Icons.Default.Check else Icons.Default.Add,
+                    contentDescription = if (isInLibrary) "Remove from library" else "Add to library",
+                    onClick = onToggleLibrary
                 )
             }
 
@@ -213,7 +210,7 @@ private fun ActionIconButton(
             focusedContentColor = NuvioColors.OnPrimary
         ),
         shape = IconButtonDefaults.shape(
-            shape = RoundedCornerShape(12.dp)
+            shape = CircleShape
         )
     ) {
         Icon(

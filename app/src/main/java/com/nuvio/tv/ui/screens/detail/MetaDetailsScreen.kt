@@ -90,6 +90,7 @@ fun MetaDetailsScreen(
                     seasons = uiState.seasons,
                     selectedSeason = uiState.selectedSeason,
                     episodesForSeason = uiState.episodesForSeason,
+                    isInLibrary = uiState.isInLibrary,
                     onSeasonSelected = { viewModel.onEvent(MetaDetailsEvent.OnSeasonSelected(it)) },
                     onEpisodeClick = { video ->
                         // Navigate to stream screen for episode
@@ -122,7 +123,8 @@ fun MetaDetailsScreen(
                             genresString,
                             yearString
                         )
-                    }
+                    },
+                    onToggleLibrary = { viewModel.onEvent(MetaDetailsEvent.OnToggleLibrary) }
                 )
             }
         }
@@ -136,9 +138,11 @@ private fun MetaDetailsContent(
     seasons: List<Int>,
     selectedSeason: Int,
     episodesForSeason: List<Video>,
+    isInLibrary: Boolean,
     onSeasonSelected: (Int) -> Unit,
     onEpisodeClick: (Video) -> Unit,
-    onPlayClick: (String) -> Unit
+    onPlayClick: (String) -> Unit,
+    onToggleLibrary: () -> Unit
 ) {
     val isSeries = meta.type == ContentType.SERIES || meta.videos.isNotEmpty()
     val nextEpisode = episodesForSeason.firstOrNull()
@@ -227,7 +231,9 @@ private fun MetaDetailsContent(
                             meta.id
                         }
                         onPlayClick(videoId)
-                    }
+                    },
+                    isInLibrary = isInLibrary,
+                    onToggleLibrary = onToggleLibrary
                 )
             }
 

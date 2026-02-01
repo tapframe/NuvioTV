@@ -6,14 +6,17 @@ import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.tmdb.TmdbMetadataService
 import com.nuvio.tv.core.tmdb.TmdbService
+import com.nuvio.tv.data.local.LibraryPreferences
 import com.nuvio.tv.data.local.TmdbSettingsDataStore
 import com.nuvio.tv.domain.model.Meta
+import com.nuvio.tv.domain.model.SavedLibraryItem
 import com.nuvio.tv.domain.model.Video
 import com.nuvio.tv.domain.repository.MetaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -25,6 +28,7 @@ class MetaDetailsViewModel @Inject constructor(
     private val tmdbSettingsDataStore: TmdbSettingsDataStore,
     private val tmdbService: TmdbService,
     private val tmdbMetadataService: TmdbMetadataService,
+    private val libraryPreferences: LibraryPreferences,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -36,6 +40,7 @@ class MetaDetailsViewModel @Inject constructor(
     val uiState: StateFlow<MetaDetailsUiState> = _uiState.asStateFlow()
 
     init {
+        observeLibraryState()
         loadMeta()
     }
 
@@ -44,8 +49,18 @@ class MetaDetailsViewModel @Inject constructor(
             is MetaDetailsEvent.OnSeasonSelected -> selectSeason(event.season)
             is MetaDetailsEvent.OnEpisodeClick -> { /* Navigate to stream */ }
             MetaDetailsEvent.OnPlayClick -> { /* Start playback */ }
+            MetaDetailsEvent.OnToggleLibrary -> toggleLibrary()
             MetaDetailsEvent.OnRetry -> loadMeta()
             MetaDetailsEvent.OnBackPress -> { /* Handle in screen */ }
+        }
+    }
+
+    private fun observeLibraryState() {
+        viewModelScope.launch {
+            libraryPreferences.isInLibrary(itemId = itemId, itemType = itemType)
+                .collectLatest { inLibrary ->
+                    _uiState.update { it.copy(isInLibrary = inLibrary) }
+                }
         }
     }
 
@@ -215,6 +230,33 @@ class MetaDetailsViewModel @Inject constructor(
         return videos
             .filter { it.season == season }
             .sortedBy { it.episode }
+    }
+
+    private fun toggleLibrary() {
+        val meta = _uiState.value.meta ?: return
+        viewModelScope.launch {
+            if (_uiState.value.isInLibrary) {
+                libraryPreferences.removeItem(itemId = meta.id, itemType = meta.type.toApiString())
+            } else {
+                libraryPreferences.addItem(meta.toSavedLibraryItem(preferredAddonBaseUrl))
+            }
+        }
+    }
+
+    private fun Meta.toSavedLibraryItem(addonBaseUrl: String?): SavedLibraryItem {
+        return SavedLibraryItem(
+            id = id,
+            type = type.toApiString(),
+            name = name,
+            poster = poster,
+            posterShape = posterShape,
+            background = background,
+            description = description,
+            releaseInfo = releaseInfo,
+            imdbRating = imdbRating,
+            genres = genres,
+            addonBaseUrl = addonBaseUrl
+        )
     }
 
     fun getNextEpisodeInfo(): String? {

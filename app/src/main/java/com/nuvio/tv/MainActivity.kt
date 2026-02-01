@@ -39,6 +39,7 @@ import androidx.tv.material3.Surface
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import coil.compose.AsyncImage
@@ -66,6 +67,7 @@ class MainActivity : ComponentActivity() {
                     val rootRoutes = setOf(
                         Screen.Home.route,
                         Screen.Search.route,
+                        Screen.Library.route,
                         Screen.Settings.route,
                         Screen.AddonManager.route
                     )
@@ -85,6 +87,7 @@ class MainActivity : ComponentActivity() {
                     val drawerItems = listOf(
                         Screen.Home.route to ("Home" to Icons.Filled.Home),
                         Screen.Search.route to ("Search" to Icons.Filled.Search),
+                        Screen.Library.route to ("Library" to Icons.Filled.Bookmark),
                         Screen.AddonManager.route to ("Addons" to Icons.Filled.Extension),
                         Screen.Settings.route to ("Settings" to Icons.Filled.Settings)
                     )
