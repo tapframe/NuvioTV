@@ -91,8 +91,8 @@ fun SettingsScreen(
             item {
                 SettingsItem(
                     icon = Icons.Default.ViewModule,
-                    title = "Home Layout",
-                    subtitle = "Choose between classic rows or grid view",
+                    title = "Home & Hero Layout",
+                    subtitle = "Choose home layout and hero section contents",
                     onClick = onNavigateToLayout
                 )
             }
