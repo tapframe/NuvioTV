@@ -125,11 +125,16 @@ fun LayoutSelectionScreen(
                     )
                 )
             ) {
-                Text(
-                    text = "Continue",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White
-                )
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Continue",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White
+                    )
+                }
             }
         }
     }

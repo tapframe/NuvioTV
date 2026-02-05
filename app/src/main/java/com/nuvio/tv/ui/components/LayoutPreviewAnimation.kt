@@ -19,13 +19,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.text.TextMeasurer
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.nuvio.tv.ui.theme.NuvioColors
 
 /**
@@ -48,11 +42,9 @@ fun ClassicLayoutPreview(
         label = "classicScroll"
     )
 
-    val textMeasurer = rememberTextMeasurer()
     val bgColor = NuvioColors.Background
     val cardColor = accentColor.copy(alpha = 0.6f)
     val cardColorDim = accentColor.copy(alpha = 0.3f)
-    val textColor = Color.White.copy(alpha = 0.5f)
 
     Box(
         modifier = modifier
@@ -62,27 +54,15 @@ fun ClassicLayoutPreview(
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
-            val rowHeight = h / 4.2f
+            val rowCount = 3
+            val rowSpacing = h * 0.04f
+            val rowHeight = (h - rowSpacing * (rowCount + 1)) / rowCount
             val cardWidth = w / 5.5f
-            val cardHeight = rowHeight * 0.65f
+            val cardHeight = rowHeight * 0.85f
             val gap = w / 40f
-            val labelHeight = rowHeight * 0.25f
 
-            val labels = listOf("Trending", "Action", "Comedy")
-
-            labels.forEachIndexed { rowIndex, label ->
-                val rowY = rowHeight * 0.3f + rowIndex * (rowHeight + h * 0.02f)
-
-                // Row label
-                drawText(
-                    textMeasurer = textMeasurer,
-                    text = label,
-                    topLeft = Offset(gap * 2, rowY),
-                    style = TextStyle(
-                        color = textColor,
-                        fontSize = (h * 0.055f).sp
-                    )
-                )
+            for (rowIndex in 0 until rowCount) {
+                val rowY = rowSpacing + rowIndex * (rowHeight + rowSpacing)
 
                 // Cards - middle row scrolls
                 val numCards = 7
@@ -97,7 +77,7 @@ fun ClassicLayoutPreview(
                     if (cardX + cardWidth > -cardWidth && cardX < w + cardWidth) {
                         drawRoundRect(
                             color = if (rowIndex == 1) cardColor else cardColorDim,
-                            topLeft = Offset(cardX, rowY + labelHeight),
+                            topLeft = Offset(cardX, rowY + (rowHeight - cardHeight) / 2f),
                             size = Size(cardWidth, cardHeight),
                             cornerRadius = CornerRadius(h * 0.02f)
                         )
@@ -109,8 +89,8 @@ fun ClassicLayoutPreview(
 }
 
 /**
- * Animated preview of the grid layout with hero banner and vertical grid.
- * Shows a hero area at top, then a grid scrolling upward with sticky header transitions.
+ * Animated preview of the grid layout.
+ * Shows a 5-column grid of cards scrolling upward.
  */
 @Composable
 fun GridLayoutPreview(
@@ -128,24 +108,9 @@ fun GridLayoutPreview(
         label = "gridScroll"
     )
 
-    // Crossfade between section names
-    val sectionAlpha by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "sectionAlpha"
-    )
-
-    val textMeasurer = rememberTextMeasurer()
     val bgColor = NuvioColors.Background
-    val heroColor = accentColor.copy(alpha = 0.4f)
     val cardColor = accentColor.copy(alpha = 0.5f)
     val cardColorAlt = accentColor.copy(alpha = 0.3f)
-    val headerBg = NuvioColors.Background.copy(alpha = 0.9f)
-    val textColor = Color.White.copy(alpha = 0.5f)
 
     Box(
         modifier = modifier
@@ -156,62 +121,19 @@ fun GridLayoutPreview(
             val w = size.width
             val h = size.height
 
-            // Hero section at top (~30% of height)
-            val heroHeight = h * 0.28f
-            drawRoundRect(
-                color = heroColor,
-                topLeft = Offset(w * 0.04f, h * 0.04f),
-                size = Size(w * 0.92f, heroHeight),
-                cornerRadius = CornerRadius(h * 0.02f)
-            )
-
-            // Hero text placeholder
-            drawText(
-                textMeasurer = textMeasurer,
-                text = "Featured",
-                topLeft = Offset(w * 0.08f, heroHeight * 0.6f + h * 0.04f),
-                style = TextStyle(
-                    color = Color.White.copy(alpha = 0.6f),
-                    fontSize = (h * 0.05f).sp
-                )
-            )
-
-            // Sticky header area
-            val headerY = heroHeight + h * 0.08f
-            val headerHeight = h * 0.06f
-            drawRect(
-                color = headerBg,
-                topLeft = Offset(0f, headerY),
-                size = Size(w, headerHeight)
-            )
-
-            // Crossfading header text
-            val headerText = if (sectionAlpha > 0.5f) "Trending" else "Action"
-            drawText(
-                textMeasurer = textMeasurer,
-                text = headerText,
-                topLeft = Offset(w * 0.06f, headerY + headerHeight * 0.15f),
-                style = TextStyle(
-                    color = textColor,
-                    fontSize = (h * 0.04f).sp
-                )
-            )
-
-            // Grid of cards
-            val gridStartY = headerY + headerHeight + h * 0.02f
             val cols = 5
-            val cardGap = w * 0.02f
+            val cardGap = w * 0.025f
             val cardW = (w - cardGap * (cols + 1)) / cols
             val cardH = cardW * 1.4f
             val totalScrollY = scrollOffset * cardH * 1.5f
 
-            for (row in 0..5) {
+            for (row in 0..6) {
                 for (col in 0 until cols) {
                     val cardX = cardGap + col * (cardW + cardGap)
-                    val cardY = gridStartY + row * (cardH + cardGap) - totalScrollY
+                    val cardY = cardGap + row * (cardH + cardGap) - totalScrollY
 
-                    if (cardY + cardH > gridStartY && cardY < h) {
-                        val color = if (row < 2) cardColor else cardColorAlt
+                    if (cardY + cardH > 0f && cardY < h) {
+                        val color = if (row % 3 < 2) cardColor else cardColorAlt
                         drawRoundRect(
                             color = color,
                             topLeft = Offset(cardX, cardY),
