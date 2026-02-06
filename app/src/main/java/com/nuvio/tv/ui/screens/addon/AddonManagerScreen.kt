@@ -234,7 +234,8 @@ fun AddonManagerScreen(
             QrCodeOverlay(
                 qrBitmap = uiState.qrCodeBitmap,
                 serverUrl = uiState.serverUrl,
-                onClose = viewModel::stopQrMode
+                onClose = viewModel::stopQrMode,
+                hasPendingChange = uiState.pendingChange != null
             )
         }
 
@@ -321,12 +322,15 @@ private fun ManageFromPhoneCard(onClick: () -> Unit) {
 private fun QrCodeOverlay(
     qrBitmap: Bitmap?,
     serverUrl: String?,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    hasPendingChange: Boolean = false
 ) {
     val focusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+    LaunchedEffect(hasPendingChange) {
+        if (!hasPendingChange) {
+            focusRequester.requestFocus()
+        }
     }
 
     BackHandler { onClose() }
