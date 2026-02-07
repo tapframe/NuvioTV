@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
@@ -166,7 +165,8 @@ class AddonManagerViewModel @Inject constructor(
                 }
             },
             onChangeProposed = { change -> handleChangeProposed(change) },
-            manifestFetcher = { url -> fetchAddonInfo(url) }
+            manifestFetcher = { url -> fetchAddonInfo(url) },
+            logoProvider = { logoBytes }
         )
 
         val activeServer = server

@@ -11,6 +11,7 @@ class RepositoryConfigServer(
     private val currentRepositoriesProvider: () -> List<RepositoryInfo>,
     private val onChangeProposed: (PendingRepoChange) -> Unit,
     private val manifestFetcher: (String) -> RepositoryInfo?,
+    private val logoProvider: (() -> ByteArray?)? = null,
     port: Int = 8090
 ) : NanoHTTPD(port) {
 
@@ -148,12 +149,13 @@ class RepositoryConfigServer(
             currentRepositoriesProvider: () -> List<RepositoryInfo>,
             onChangeProposed: (PendingRepoChange) -> Unit,
             manifestFetcher: (String) -> RepositoryInfo?,
+            logoProvider: (() -> ByteArray?)? = null,
             startPort: Int = 8090,
             maxAttempts: Int = 10
         ): RepositoryConfigServer? {
             for (port in startPort until startPort + maxAttempts) {
                 try {
-                    val server = RepositoryConfigServer(currentRepositoriesProvider, onChangeProposed, manifestFetcher, port)
+                    val server = RepositoryConfigServer(currentRepositoriesProvider, onChangeProposed, manifestFetcher, logoProvider, port)
                     server.start(SOCKET_READ_TIMEOUT, false)
                     return server
                 } catch (e: Exception) {

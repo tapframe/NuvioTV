@@ -11,6 +11,7 @@ class AddonConfigServer(
     private val currentAddonsProvider: () -> List<AddonInfo>,
     private val onChangeProposed: (PendingAddonChange) -> Unit,
     private val manifestFetcher: (String) -> AddonInfo?,
+    private val logoProvider: (() -> ByteArray?)? = null,
     port: Int = 8080
 ) : NanoHTTPD(port) {
 
@@ -149,12 +150,13 @@ class AddonConfigServer(
             currentAddonsProvider: () -> List<AddonInfo>,
             onChangeProposed: (PendingAddonChange) -> Unit,
             manifestFetcher: (String) -> AddonInfo?,
+            logoProvider: (() -> ByteArray?)? = null,
             startPort: Int = 8080,
             maxAttempts: Int = 10
         ): AddonConfigServer? {
             for (port in startPort until startPort + maxAttempts) {
                 try {
-                    val server = AddonConfigServer(currentAddonsProvider, onChangeProposed, manifestFetcher, port)
+                    val server = AddonConfigServer(currentAddonsProvider, onChangeProposed, manifestFetcher, logoProvider, port)
                     server.start(SOCKET_READ_TIMEOUT, false)
                     return server
                 } catch (e: Exception) {

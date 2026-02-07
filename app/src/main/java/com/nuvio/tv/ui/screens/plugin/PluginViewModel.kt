@@ -213,7 +213,8 @@ class PluginViewModel @Inject constructor(
                 }
             },
             onChangeProposed = { change -> handleRepoChangeProposed(change) },
-            manifestFetcher = { url -> fetchRepoInfo(url) }
+            manifestFetcher = { url -> fetchRepoInfo(url) },
+            logoProvider = { logoBytes }
         )
 
         val activeServer = repoServer
