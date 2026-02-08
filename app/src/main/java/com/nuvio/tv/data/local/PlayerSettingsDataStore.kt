@@ -98,7 +98,6 @@ data class BufferSettings(
     val bufferForPlaybackAfterRebufferMs: Int = 9_000,
     val targetBufferSizeMb: Int = 0, // 0 = auto (calculated from available heap)
     val backBufferDurationMs: Int = 0,
-    val retainBackBufferFromKeyframe: Boolean = false,
     val useParallelConnections: Boolean = true
 )
 
@@ -179,7 +178,6 @@ class PlayerSettingsDataStore @Inject constructor(
     private val bufferForPlaybackAfterRebufferMsKey = intPreferencesKey("buffer_for_playback_after_rebuffer_ms")
     private val targetBufferSizeMbKey = intPreferencesKey("target_buffer_size_mb")
     private val backBufferDurationMsKey = intPreferencesKey("back_buffer_duration_ms")
-    private val retainBackBufferFromKeyframeKey = booleanPreferencesKey("retain_back_buffer_from_keyframe")
     private val useParallelConnectionsKey = booleanPreferencesKey("use_parallel_connections")
 
     /**
@@ -217,7 +215,6 @@ class PlayerSettingsDataStore @Inject constructor(
                 bufferForPlaybackAfterRebufferMs = prefs[bufferForPlaybackAfterRebufferMsKey] ?: 9_000,
                 targetBufferSizeMb = prefs[targetBufferSizeMbKey] ?: 0,
                 backBufferDurationMs = prefs[backBufferDurationMsKey] ?: 0,
-                retainBackBufferFromKeyframe = prefs[retainBackBufferFromKeyframeKey] ?: false,
                 useParallelConnections = prefs[useParallelConnectionsKey] ?: false
             )
         )
@@ -408,12 +405,6 @@ class PlayerSettingsDataStore @Inject constructor(
     suspend fun setBufferBackBufferDurationMs(ms: Int) {
         dataStore.edit { prefs ->
             prefs[backBufferDurationMsKey] = ms.coerceIn(0, 120_000)
-        }
-    }
-
-    suspend fun setBufferRetainBackBufferFromKeyframe(retain: Boolean) {
-        dataStore.edit { prefs ->
-            prefs[retainBackBufferFromKeyframeKey] = retain
         }
     }
 

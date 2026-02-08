@@ -783,7 +783,7 @@ fun PlaybackSettingsContent(
                     SliderSettingsItem(
                         icon = Icons.Default.Storage,
                         title = "Target Buffer Size",
-                        subtitle = "Maximum memory for buffering. 'Auto' calculates optimal size based on track bitrates (highly recommended). Max ${maxBufferSize}MB based on device memory.",
+                        subtitle = "Maximum memory for buffering. 'Auto' calculates optimal size based available RAM (recommended).",
                         value = bufferSizeMb.coerceAtMost(maxBufferSize),
                         valueText = if (bufferSizeMb == 0) "Auto (recommended)" else "$bufferSizeMb MB",
                         minValue = 0,
@@ -797,37 +797,11 @@ fun PlaybackSettingsContent(
                     )
                 }
 
-                // Parallel Connections Toggle
-                item {
-                    ToggleSettingsItem(
-                        icon = Icons.Default.Wifi,
-                        title = "Parallel Connections",
-                        subtitle = "Use multiple TCP connections for faster progressive downloads. Can multiply throughput on connections limited to ~100 Mbps per stream.",
-                        isChecked = playerSettings.bufferSettings.useParallelConnections,
-                        onCheckedChange = { enabled ->
-                            coroutineScope.launch {
-                                viewModel.setUseParallelConnections(enabled)
-                            }
-                        }
-                    )
-                }
-
-                // Back Buffer Settings Section
-                item {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Back Buffer",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = NuvioColors.TextSecondary,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-                }
-
                 item {
                     SliderSettingsItem(
                         icon = Icons.Default.History,
                         title = "Back Buffer Duration",
-                        subtitle = "How much already-played content to keep in memory. Enables fast backward seeking without re-downloading. Set to 0 to disable and save memory.",
+                        subtitle = "How much already-played content to keep in memory. Enables fast backward seeking without re-downloading. Set to 0 to disable and save memory (recommended).",
                         value = playerSettings.bufferSettings.backBufferDurationMs / 1000,
                         valueText = "${playerSettings.bufferSettings.backBufferDurationMs / 1000}s",
                         minValue = 0,
@@ -841,15 +815,16 @@ fun PlaybackSettingsContent(
                     )
                 }
 
+                // Parallel Connections Toggle
                 item {
                     ToggleSettingsItem(
-                        icon = Icons.Default.Key,
-                        title = "Retain From Keyframe",
-                        subtitle = "Keep back buffer only from the nearest keyframe. More memory efficient but seeking may be slightly less precise.",
-                        isChecked = playerSettings.bufferSettings.retainBackBufferFromKeyframe,
+                        icon = Icons.Default.Wifi,
+                        title = "Parallel Connections",
+                        subtitle = "Use multiple TCP connections in parallel for a chance of faster streaming speed. Activate if you experience buffering even though speed tests on your device show you shouldn't.",
+                        isChecked = playerSettings.bufferSettings.useParallelConnections,
                         onCheckedChange = { enabled ->
                             coroutineScope.launch {
-                                viewModel.setBufferRetainBackBufferFromKeyframe(enabled)
+                                viewModel.setUseParallelConnections(enabled)
                             }
                         }
                     )

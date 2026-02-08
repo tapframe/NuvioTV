@@ -494,7 +494,7 @@ class PlayerViewModel @Inject constructor(
                     .setTargetBufferBytes(targetBufferBytes)
                     .setBackBuffer(
                         bufferSettings.backBufferDurationMs,
-                        bufferSettings.retainBackBufferFromKeyframe
+                        bufferSettings.backBufferDurationMs > 0
                     )
                     .build()
 

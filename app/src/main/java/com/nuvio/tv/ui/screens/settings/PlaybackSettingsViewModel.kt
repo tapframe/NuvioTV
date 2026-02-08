@@ -162,10 +162,6 @@ class PlaybackSettingsViewModel @Inject constructor(
         playerSettingsDataStore.setBufferBackBufferDurationMs(ms)
     }
 
-    suspend fun setBufferRetainBackBufferFromKeyframe(retain: Boolean) {
-        playerSettingsDataStore.setBufferRetainBackBufferFromKeyframe(retain)
-    }
-
     suspend fun setUseParallelConnections(enabled: Boolean) {
         playerSettingsDataStore.setUseParallelConnections(enabled)
     }
