@@ -1,7 +1,5 @@
 package com.nuvio.tv.ui.screens.settings
 
-import android.app.ActivityManager
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import com.nuvio.tv.data.local.LibassRenderType
 import com.nuvio.tv.data.local.PlayerSettings
@@ -9,13 +7,11 @@ import com.nuvio.tv.data.local.PlayerSettingsDataStore
 import com.nuvio.tv.data.local.TrailerSettings
 import com.nuvio.tv.data.local.TrailerSettingsDataStore
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 
 @HiltViewModel
 class PlaybackSettingsViewModel @Inject constructor(
-    @ApplicationContext private val context: Context,
     private val playerSettingsDataStore: PlayerSettingsDataStore,
     private val trailerSettingsDataStore: TrailerSettingsDataStore
 ) : ViewModel() {
@@ -62,22 +58,16 @@ class PlaybackSettingsViewModel @Inject constructor(
     }
 
     /**
-     * Calculate maximum safe buffer size based on device's available heap memory.
-     * Reserves ~60% of heap for video decoders, app UI, and other allocations.
-     * Returns value in MB, minimum 50MB.
+     * Calculate maximum safe buffer size based on device's available free heap.
+     * Uses same formula as PlayerViewModel: 60% of free heap at init time.
+     * Returns value in MB, minimum 50MB, cap at 1000MB.
      */
     val maxBufferSizeMb: Int by lazy {
-        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        val memoryInfo = ActivityManager.MemoryInfo()
-        activityManager.getMemoryInfo(memoryInfo)
-
-        // Get max heap size for this app (considers largeHeap setting)
-        val maxHeapMb = Runtime.getRuntime().maxMemory() / (1024 * 1024)
-
-        // Allow up to 40% of heap for buffer, leaving 60% for decoders and app
-        // Minimum 50MB, cap at 500MB even on high-memory devices
-        val calculatedMax = (maxHeapMb * 0.4).toInt()
-        calculatedMax.coerceIn(50, 500)
+        val runtime = Runtime.getRuntime()
+        val freeHeap = runtime.maxMemory() - (runtime.totalMemory() - runtime.freeMemory())
+        val sixtyPercent = (freeHeap * 0.60).toLong()
+        val bytes = sixtyPercent.coerceIn(50L * 1024 * 1024, 1000L * 1024 * 1024)
+        (bytes / (1024 * 1024)).toInt()
     }
 
     /**
