@@ -4,6 +4,7 @@ import androidx.media3.common.C
 import androidx.media3.common.TrackGroup
 import com.nuvio.tv.data.local.SubtitleStyleSettings
 import com.nuvio.tv.data.repository.SkipInterval
+import com.nuvio.tv.domain.model.Chapter
 import com.nuvio.tv.domain.model.MetaCastMember
 import com.nuvio.tv.domain.model.Stream
 import com.nuvio.tv.domain.model.Subtitle
@@ -84,7 +85,12 @@ data class PlayerUiState(
     val skipIntervalDismissed: Boolean = false,
     // Frame rate matching
     val detectedFrameRate: Float = 0f,
-    val frameRateMatchingEnabled: Boolean = false
+    val frameRateMatchingEnabled: Boolean = false,
+    // Chapters
+    val chapters: List<Chapter> = emptyList(),
+    val currentChapterTitle: String? = null,
+    val chapterSkipEnabled: Boolean = true,
+    val hideChapterTitles: Boolean = false
 )
 
 data class TrackInfo(
@@ -127,6 +133,8 @@ sealed class PlayerEvent {
     data object OnDismissPauseOverlay : PlayerEvent()
     data object OnSkipIntro : PlayerEvent()
     data object OnDismissSkipIntro : PlayerEvent()
+    data object OnNextChapter : PlayerEvent()
+    data object OnPreviousChapter : PlayerEvent()
 }
 
 data class ParentalWarning(

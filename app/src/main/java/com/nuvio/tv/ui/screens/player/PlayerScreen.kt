@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -56,8 +57,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -82,6 +85,7 @@ import androidx.tv.material3.IconButton
 import androidx.tv.material3.IconButtonDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import com.nuvio.tv.domain.model.Chapter
 import com.nuvio.tv.domain.model.Subtitle
 import com.nuvio.tv.ui.components.LoadingIndicator
 import com.nuvio.tv.ui.theme.NuvioColors
@@ -227,7 +231,10 @@ fun PlayerScreen(
                             }
                         }
                         KeyEvent.KEYCODE_DPAD_UP -> {
-                            if (!uiState.showControls) {
+                            val canChapterSkip = (uiState.isPlaying || uiState.isBuffering) && uiState.chapterSkipEnabled && uiState.chapters.isNotEmpty()
+                            if (canChapterSkip) {
+                                viewModel.onEvent(PlayerEvent.OnNextChapter)
+                            } else if (!uiState.showControls) {
                                 viewModel.onEvent(PlayerEvent.OnToggleControls)
                             } else {
                                 val skipVisible = uiState.activeSkipInterval != null && !uiState.skipIntervalDismissed
@@ -244,7 +251,11 @@ fun PlayerScreen(
                             true
                         }
                         KeyEvent.KEYCODE_DPAD_DOWN -> {
-                            if (!uiState.showControls) {
+                            val canChapterSkip = (uiState.isPlaying || uiState.isBuffering) && uiState.chapterSkipEnabled && uiState.chapters.isNotEmpty()
+                            if (canChapterSkip) {
+                                viewModel.onEvent(PlayerEvent.OnPreviousChapter)
+                                true
+                            } else if (!uiState.showControls) {
                                 viewModel.onEvent(PlayerEvent.OnToggleControls)
                                 true
                             } else {
@@ -657,10 +668,23 @@ private fun PlayerControlsOverlay(
                 .align(Alignment.BottomCenter)
                 .padding(horizontal = 32.dp, vertical = 24.dp)
         ) {
+            // Chapter title above progress bar
+            if (!uiState.currentChapterTitle.isNullOrBlank()) {
+                Text(
+                    text = uiState.currentChapterTitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+            }
+
             // Progress bar
             ProgressBar(
                 currentPosition = uiState.currentPosition,
                 duration = uiState.duration,
+                chapters = uiState.chapters,
                 onSeekTo = onSeekTo
             )
 
@@ -786,6 +810,7 @@ private fun ControlButton(
 private fun ProgressBar(
     currentPosition: Long,
     duration: Long,
+    chapters: List<Chapter> = emptyList(),
     onSeekTo: (Long) -> Unit
 ) {
     val progress = if (duration > 0) {
@@ -801,17 +826,47 @@ private fun ProgressBar(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(6.dp)
-            .clip(RoundedCornerShape(3.dp))
-            .background(Color.White.copy(alpha = 0.3f))
+            .height(14.dp),
+        contentAlignment = Alignment.Center
     ) {
+        // Bar track
         Box(
             modifier = Modifier
-                .fillMaxHeight()
-                .fillMaxWidth(animatedProgress)
+                .fillMaxWidth()
+                .height(6.dp)
                 .clip(RoundedCornerShape(3.dp))
-                .background(NuvioColors.Secondary)
-        )
+                .background(Color.White.copy(alpha = 0.3f))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(animatedProgress)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(NuvioColors.Secondary)
+            )
+        }
+
+        // Chapter markers (diamond shapes above the bar)
+        if (chapters.isNotEmpty() && duration > 0) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val centerY = size.height / 2f
+                val markerRadius = 3.5.dp.toPx()
+                chapters.forEach { chapter ->
+                    val fraction = (chapter.startTimeMs.toFloat() / duration).coerceIn(0f, 1f)
+                    if (fraction in 0.001f..0.999f) {
+                        val x = fraction * size.width
+                        val path = Path().apply {
+                            moveTo(x, centerY - markerRadius)
+                            lineTo(x + markerRadius, centerY)
+                            lineTo(x, centerY + markerRadius)
+                            lineTo(x - markerRadius, centerY)
+                            close()
+                        }
+                        drawPath(path, color = Color.White.copy(alpha = 0.85f))
+                    }
+                }
+            }
+        }
     }
 }
 

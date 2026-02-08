@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Storage
@@ -243,6 +244,45 @@ fun PlaybackSettingsContent(
                     onCheckedChange = { enabled ->
                         coroutineScope.launch {
                             viewModel.setFrameRateMatching(enabled)
+                        }
+                    }
+                )
+            }
+
+            // Chapters Section Header
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Chapters",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = NuvioColors.TextSecondary,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
+
+            item {
+                ToggleSettingsItem(
+                    icon = Icons.Default.SkipNext,
+                    title = "Chapter Skip",
+                    subtitle = "Use D-pad up/down to skip between chapters during playback (when available in the file)",
+                    isChecked = playerSettings.chapterSkipEnabled,
+                    onCheckedChange = { enabled ->
+                        coroutineScope.launch {
+                            viewModel.setChapterSkipEnabled(enabled)
+                        }
+                    }
+                )
+            }
+
+            item {
+                ToggleSettingsItem(
+                    icon = Icons.Default.ClosedCaption,
+                    title = "Hide Chapter Titles",
+                    subtitle = "Only show the chapter number without its title to avoid spoilers",
+                    isChecked = playerSettings.hideChapterTitles,
+                    onCheckedChange = { hide ->
+                        coroutineScope.launch {
+                            viewModel.setHideChapterTitles(hide)
                         }
                     }
                 )
