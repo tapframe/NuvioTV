@@ -1336,7 +1336,8 @@ class PlayerViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             currentPosition = pos,
-                            duration = player.duration.coerceAtLeast(0L)
+                            duration = player.duration.coerceAtLeast(0L),
+                            bufferedPosition = player.bufferedPosition.coerceAtLeast(0L)
                         )
                     }
                     updateActiveSkipInterval(pos)

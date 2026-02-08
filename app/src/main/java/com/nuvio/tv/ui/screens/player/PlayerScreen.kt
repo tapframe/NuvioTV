@@ -661,6 +661,7 @@ private fun PlayerControlsOverlay(
             ProgressBar(
                 currentPosition = uiState.currentPosition,
                 duration = uiState.duration,
+                bufferedPosition = uiState.bufferedPosition,
                 onSeekTo = onSeekTo
             )
 
@@ -786,16 +787,27 @@ private fun ControlButton(
 private fun ProgressBar(
     currentPosition: Long,
     duration: Long,
+    bufferedPosition: Long,
     onSeekTo: (Long) -> Unit
 ) {
     val progress = if (duration > 0) {
         (currentPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
     } else 0f
 
+    val bufferedProgress = if (duration > 0) {
+        (bufferedPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+    } else 0f
+
     val animatedProgress by animateFloatAsState(
         targetValue = progress,
         animationSpec = tween(100),
         label = "progress"
+    )
+
+    val animatedBufferedProgress by animateFloatAsState(
+        targetValue = bufferedProgress,
+        animationSpec = tween(100),
+        label = "bufferedProgress"
     )
 
     Box(
@@ -805,6 +817,15 @@ private fun ProgressBar(
             .clip(RoundedCornerShape(3.dp))
             .background(Color.White.copy(alpha = 0.3f))
     ) {
+        // Buffered progress bar
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(animatedBufferedProgress)
+                .clip(RoundedCornerShape(3.dp))
+                .background(Color.White.copy(alpha = 0.5f))
+        )
+        // Played progress bar
         Box(
             modifier = Modifier
                 .fillMaxHeight()
