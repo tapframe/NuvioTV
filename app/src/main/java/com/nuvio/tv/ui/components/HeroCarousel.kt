@@ -1,5 +1,7 @@
 package com.nuvio.tv.ui.components
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,15 +17,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
@@ -35,9 +38,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Carousel
-import androidx.tv.material3.CarouselDefaults
-import androidx.tv.material3.CarouselState
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -46,6 +46,9 @@ import coil.decode.SvgDecoder
 import coil.request.ImageRequest
 import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.ui.theme.NuvioColors
+import kotlinx.coroutines.delay
+
+private const val AUTO_ADVANCE_INTERVAL_MS = 5000L
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -56,24 +59,72 @@ fun HeroCarousel(
 ) {
     if (items.isEmpty()) return
 
-    val carouselState = remember { CarouselState() }
+    var activeIndex by remember { mutableIntStateOf(0) }
     var isFocused by remember { mutableStateOf(false) }
 
-    Carousel(
-        itemCount = items.size,
-        carouselState = carouselState,
+    // Auto-advance when not focused
+    LaunchedEffect(isFocused, items.size) {
+        if (items.size <= 1) return@LaunchedEffect
+        while (true) {
+            delay(AUTO_ADVANCE_INTERVAL_MS)
+            if (!isFocused) {
+                activeIndex = (activeIndex + 1) % items.size
+            }
+        }
+    }
+
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .height(400.dp)
-            .onFocusChanged { isFocused = it.hasFocus },
-        carouselIndicator = {
-            CarouselDefaults.IndicatorRow(
-                itemCount = items.size,
-                activeItemIndex = carouselState.activeItemIndex,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 16.dp)
-            ) { isActive ->
+            .focusable()
+            .onFocusChanged { isFocused = it.hasFocus || it.isFocused }
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown) {
+                    when (event.key) {
+                        Key.DirectionLeft -> {
+                            if (activeIndex > 0) {
+                                activeIndex--
+                                true
+                            } else false
+                        }
+                        Key.DirectionRight -> {
+                            if (activeIndex < items.size - 1) {
+                                activeIndex++
+                                true
+                            } else false
+                        }
+                        else -> false
+                    }
+                } else if (event.type == KeyEventType.KeyUp &&
+                    (event.key == Key.DirectionCenter || event.key == Key.Enter)
+                ) {
+                    onItemClick(items[activeIndex])
+                    true
+                } else {
+                    false
+                }
+            }
+    ) {
+        // Crossfade between slides
+        Crossfade(
+            targetState = activeIndex,
+            animationSpec = tween(500),
+            label = "heroSlide"
+        ) { index ->
+            val item = items.getOrNull(index) ?: return@Crossfade
+            HeroCarouselSlide(item = item)
+        }
+
+        // Indicator dots
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items.forEachIndexed { index, _ ->
+                val isActive = index == activeIndex
                 val dotWidth = when {
                     isFocused && isActive -> 32.dp
                     isActive -> 24.dp
@@ -89,27 +140,20 @@ fun HeroCarousel(
                             when {
                                 isFocused && isActive -> NuvioColors.FocusRing
                                 isFocused -> NuvioColors.FocusRing.copy(alpha = 0.4f)
-                                isActive -> NuvioColors.Primary
+                                isActive -> NuvioColors.FocusRing
                                 else -> Color.White.copy(alpha = 0.3f)
                             }
                         )
                 )
             }
         }
-    ) { index ->
-        val item = items[index]
-        HeroCarouselSlide(
-            item = item,
-            onClick = { onItemClick(item) }
-        )
     }
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class, ExperimentalComposeUiApi::class)
+@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun HeroCarouselSlide(
-    item: MetaPreview,
-    onClick: () -> Unit
+    item: MetaPreview
 ) {
     val bgColor = NuvioColors.Background
     val bottomGradient = remember(bgColor) {
@@ -135,19 +179,7 @@ private fun HeroCarouselSlide(
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .focusable()
-            .onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyUp &&
-                    (event.key == Key.DirectionCenter || event.key == Key.Enter)
-                ) {
-                    onClick()
-                    true
-                } else {
-                    false
-                }
-            }
+        modifier = Modifier.fillMaxSize()
     ) {
         // Background image
         FadeInAsyncImage(

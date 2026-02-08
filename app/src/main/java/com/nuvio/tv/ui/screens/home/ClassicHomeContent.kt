@@ -1,10 +1,8 @@
 package com.nuvio.tv.ui.screens.home
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.tv.foundation.lazy.list.TvLazyColumn
 import androidx.tv.foundation.lazy.list.itemsIndexed
 import androidx.tv.foundation.lazy.list.rememberTvLazyListState
@@ -15,7 +13,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
@@ -93,6 +90,11 @@ fun ClassicHomeContent(
                             progress.contentType,
                             ""
                         )
+                    },
+                    focusedItemIndex = if (focusState.focusedRowIndex == -1) focusState.focusedItemIndex else -1,
+                    onItemFocused = { itemIndex ->
+                        currentFocusedRowIndex = -1
+                        currentFocusedItemIndex = itemIndex
                     }
                 )
             }
