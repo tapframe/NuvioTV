@@ -61,6 +61,14 @@ class PlaybackSettingsViewModel @Inject constructor(
         playerSettingsDataStore.setFrameRateMatching(enabled)
     }
 
+    suspend fun setChapterSkipEnabled(enabled: Boolean) {
+        playerSettingsDataStore.setChapterSkipEnabled(enabled)
+    }
+
+    suspend fun setHideChapterTitles(hide: Boolean) {
+        playerSettingsDataStore.setHideChapterTitles(hide)
+    }
+
     /**
      * Calculate maximum safe buffer size based on device's available heap memory.
      * Reserves ~60% of heap for video decoders, app UI, and other allocations.

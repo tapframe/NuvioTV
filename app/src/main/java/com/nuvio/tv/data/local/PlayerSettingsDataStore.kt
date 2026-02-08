@@ -126,7 +126,10 @@ data class PlayerSettings(
     val loadingOverlayEnabled: Boolean = true,
     val pauseOverlayEnabled: Boolean = true,
     // Display settings
-    val frameRateMatching: Boolean = false
+    val frameRateMatching: Boolean = false,
+    // Chapter navigation
+    val chapterSkipEnabled: Boolean = true,
+    val hideChapterTitles: Boolean = false
 )
 
 /**
@@ -159,6 +162,8 @@ class PlayerSettingsDataStore @Inject constructor(
     private val loadingOverlayEnabledKey = booleanPreferencesKey("loading_overlay_enabled")
     private val pauseOverlayEnabledKey = booleanPreferencesKey("pause_overlay_enabled")
     private val frameRateMatchingKey = booleanPreferencesKey("frame_rate_matching")
+    private val chapterSkipEnabledKey = booleanPreferencesKey("chapter_skip_enabled")
+    private val hideChapterTitlesKey = booleanPreferencesKey("hide_chapter_titles")
 
     // Subtitle style settings keys
     private val subtitlePreferredLanguageKey = stringPreferencesKey("subtitle_preferred_language")
@@ -198,6 +203,8 @@ class PlayerSettingsDataStore @Inject constructor(
             loadingOverlayEnabled = prefs[loadingOverlayEnabledKey] ?: true,
             pauseOverlayEnabled = prefs[pauseOverlayEnabledKey] ?: true,
             frameRateMatching = prefs[frameRateMatchingKey] ?: false,
+            chapterSkipEnabled = prefs[chapterSkipEnabledKey] ?: true,
+            hideChapterTitles = prefs[hideChapterTitlesKey] ?: false,
             subtitleStyle = SubtitleStyleSettings(
                 preferredLanguage = prefs[subtitlePreferredLanguageKey] ?: "en",
                 secondaryPreferredLanguage = prefs[subtitleSecondaryLanguageKey],
@@ -280,6 +287,18 @@ class PlayerSettingsDataStore @Inject constructor(
     suspend fun setFrameRateMatching(enabled: Boolean) {
         dataStore.edit { prefs ->
             prefs[frameRateMatchingKey] = enabled
+        }
+    }
+
+    suspend fun setChapterSkipEnabled(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[chapterSkipEnabledKey] = enabled
+        }
+    }
+
+    suspend fun setHideChapterTitles(hide: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[hideChapterTitlesKey] = hide
         }
     }
 

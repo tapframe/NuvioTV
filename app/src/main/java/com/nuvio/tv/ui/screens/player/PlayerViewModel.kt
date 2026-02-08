@@ -37,6 +37,8 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.common.MimeTypes
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.player.FrameRateUtils
+import com.nuvio.tv.data.parser.MatroskaChapterExtractor
+import com.nuvio.tv.domain.model.Chapter
 import com.nuvio.tv.data.local.AudioLanguageOption
 import com.nuvio.tv.data.local.LibassRenderType
 import com.nuvio.tv.data.local.PlayerSettingsDataStore
@@ -83,6 +85,7 @@ class PlayerViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "PlayerViewModel"
+        private const val PREVIOUS_CHAPTER_THRESHOLD_MS = 3000L
     }
 
     private val initialStreamUrl: String = savedStateHandle.get<String>("streamUrl")?.let {
@@ -186,6 +189,8 @@ class PlayerViewModel @Inject constructor(
     private var trackSelector: DefaultTrackSelector? = null
     private var pauseOverlayJob: Job? = null
     private val pauseOverlayDelayMs = 5000L
+    private var chapterExtractionJob: Job? = null
+    private var pendingChapterIndex: Int = -1
 
     init {
         initializePlayer(currentStreamUrl, currentHeaders)
@@ -195,6 +200,7 @@ class PlayerViewModel @Inject constructor(
         observeSubtitleSettings()
         fetchAddonSubtitles()
         fetchMetaDetails(contentId, contentType)
+        extractChapters(currentStreamUrl, currentHeaders)
     }
     
     private fun fetchAddonSubtitles() {
@@ -251,7 +257,9 @@ class PlayerViewModel @Inject constructor(
                         subtitleStyle = settings.subtitleStyle,
                         loadingOverlayEnabled = settings.loadingOverlayEnabled,
                         showLoadingOverlay = shouldShowOverlay,
-                        pauseOverlayEnabled = settings.pauseOverlayEnabled
+                        pauseOverlayEnabled = settings.pauseOverlayEnabled,
+                        chapterSkipEnabled = settings.chapterSkipEnabled,
+                        hideChapterTitles = settings.hideChapterTitles
                     )
                 }
 
@@ -937,7 +945,9 @@ class PlayerViewModel @Inject constructor(
                 sourceAllStreams = emptyList(),
                 sourceSelectedAddonFilter = null,
                 sourceFilteredStreams = emptyList(),
-                sourceAvailableAddons = emptyList()
+                sourceAvailableAddons = emptyList(),
+                chapters = emptyList(),
+                currentChapterTitle = null
             )
         }
 
@@ -955,6 +965,7 @@ class PlayerViewModel @Inject constructor(
         }
 
         loadSavedProgressFor(currentSeason, currentEpisode)
+        extractChapters(url, newHeaders)
     }
 
     private fun dismissEpisodesPanel() {
@@ -1172,7 +1183,10 @@ class PlayerViewModel @Inject constructor(
                 parentalGuideHasShown = false,
                 // Reset skip intro
                 activeSkipInterval = null,
-                skipIntervalDismissed = false
+                skipIntervalDismissed = false,
+                // Reset chapters
+                chapters = emptyList(),
+                currentChapterTitle = null
             )
         }
 
@@ -1200,6 +1214,7 @@ class PlayerViewModel @Inject constructor(
         }
 
         loadSavedProgressFor(currentSeason, currentEpisode)
+        extractChapters(url, newHeaders)
     }
 
     @OptIn(UnstableApi::class)
@@ -1340,6 +1355,7 @@ class PlayerViewModel @Inject constructor(
                         )
                     }
                     updateActiveSkipInterval(pos)
+                    updateCurrentChapter(pos)
 
                     // Periodic buffer logging every 10s during playback
                     if (player.isPlaying) {
@@ -1645,6 +1661,8 @@ class PlayerViewModel @Inject constructor(
             PlayerEvent.OnDismissSkipIntro -> {
                 _uiState.update { it.copy(skipIntervalDismissed = true) }
             }
+            PlayerEvent.OnNextChapter -> skipToNextChapter()
+            PlayerEvent.OnPreviousChapter -> skipToPreviousChapter()
         }
     }
 
@@ -1824,6 +1842,137 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    private fun extractChapters(url: String, headers: Map<String, String>) {
+        chapterExtractionJob?.cancel()
+
+        // Only extract chapters for progressive streams (MKV/MP4), not HLS/DASH
+        val isHls = url.contains(".m3u8", ignoreCase = true) ||
+            url.contains("/playlist", ignoreCase = true) ||
+            url.contains("/hls", ignoreCase = true) ||
+            url.contains("m3u8", ignoreCase = true)
+        val isDash = url.contains(".mpd", ignoreCase = true) ||
+            url.contains("/dash", ignoreCase = true)
+
+        if (isHls || isDash || url.isBlank()) {
+            _uiState.update { it.copy(chapters = emptyList(), currentChapterTitle = null) }
+            return
+        }
+
+        chapterExtractionJob = viewModelScope.launch {
+            val chapters = MatroskaChapterExtractor.extractChapters(
+                url = url,
+                headers = headers,
+                okHttpClient = getOrCreateOkHttpClient()
+            )
+            Log.d(TAG, "CHAPTERS: extracted ${chapters.size} chapters:")
+            chapters.forEachIndexed { i, ch ->
+                Log.d(TAG, "  [$i] startMs=${ch.startTimeMs}, title='${ch.title}'")
+            }
+            _uiState.update { it.copy(chapters = chapters, currentChapterTitle = null) }
+        }
+    }
+
+    private fun updateCurrentChapter(positionMs: Long) {
+        val chapters = _uiState.value.chapters
+        if (chapters.isEmpty()) {
+            pendingChapterIndex = -1
+            if (_uiState.value.currentChapterTitle != null) {
+                _uiState.update { it.copy(currentChapterTitle = null) }
+            }
+            return
+        }
+
+        val currentIndex: Int
+        if (pendingChapterIndex in chapters.indices) {
+            val pendingChapter = chapters[pendingChapterIndex]
+            if (positionMs >= pendingChapter.startTimeMs) {
+                // Position has caught up to the pending chapter, clear it
+                currentIndex = pendingChapterIndex
+                pendingChapterIndex = -1
+            } else {
+                // Still waiting for position to reach the target chapter after a skip
+                currentIndex = pendingChapterIndex
+            }
+        } else {
+            currentIndex = chapters.indexOfLast { it.startTimeMs <= positionMs }
+        }
+
+        val newTitle = formatChapterLabel(chapters, currentIndex)
+        if (newTitle != _uiState.value.currentChapterTitle) {
+            Log.d(TAG, "CHAPTERS: updateCurrentChapter pos=${positionMs}ms, idx=$currentIndex, pending=$pendingChapterIndex, title='${chapters.getOrNull(currentIndex)?.title}', label='$newTitle'")
+            _uiState.update { it.copy(currentChapterTitle = newTitle) }
+        }
+    }
+
+    private fun formatChapterLabel(chapters: List<Chapter>, index: Int): String? {
+        if (index < 0) return null
+        val chapter = chapters[index]
+        val num = String.format("%02d", index + 1)
+        val title = chapter.title
+
+        if (_uiState.value.hideChapterTitles || title.isNullOrBlank()) {
+            return "Chapter $num"
+        }
+        // If the title already looks like "Chapter 03" or "Chapter 3", use it as-is
+        if (title.startsWith("Chapter", ignoreCase = true)) {
+            return title
+        }
+        return "Chapter $num: $title"
+    }
+
+    private fun skipToNextChapter() {
+        val chapters = _uiState.value.chapters
+        if (chapters.isEmpty()) return
+        val positionMs = _exoPlayer?.currentPosition ?: return
+
+        val nextIndex = chapters.indexOfFirst { it.startTimeMs > positionMs + 500 }
+        if (nextIndex >= 0) {
+            val next = chapters[nextIndex]
+            pendingChapterIndex = nextIndex
+            _exoPlayer?.seekTo(next.startTimeMs)
+            _uiState.update {
+                it.copy(
+                    currentPosition = next.startTimeMs,
+                    currentChapterTitle = formatChapterLabel(chapters, nextIndex)
+                )
+            }
+            showControlsTemporarily()
+        }
+    }
+
+    private fun skipToPreviousChapter() {
+        val chapters = _uiState.value.chapters
+        if (chapters.isEmpty()) return
+        val positionMs = _exoPlayer?.currentPosition ?: return
+
+        // Find current chapter index
+        val currentIndex = chapters.indexOfLast { it.startTimeMs <= positionMs }
+
+        val intoChapterMs = if (currentIndex >= 0) positionMs - chapters[currentIndex].startTimeMs else 0L
+
+        val targetIndex = if (intoChapterMs > PREVIOUS_CHAPTER_THRESHOLD_MS) {
+            // More than 3s in: go to start of current chapter
+            currentIndex
+        } else if (currentIndex > 0) {
+            // Within 3s: go to previous chapter
+            currentIndex - 1
+        } else {
+            // Already at first chapter within threshold: do nothing
+            return
+        }
+
+        val target = chapters[targetIndex]
+        pendingChapterIndex = targetIndex
+        _exoPlayer?.seekTo(target.startTimeMs)
+        _uiState.update {
+            it.copy(
+                currentPosition = target.startTimeMs,
+                currentChapterTitle = formatChapterLabel(chapters, targetIndex)
+            )
+        }
+        showControlsTemporarily()
+    }
+
     private fun releasePlayer() {
         // Save progress before releasing
         saveWatchProgress()
@@ -1842,6 +1991,7 @@ class PlayerViewModel @Inject constructor(
         progressJob?.cancel()
         hideControlsJob?.cancel()
         watchProgressSaveJob?.cancel()
+        chapterExtractionJob?.cancel()
         _exoPlayer?.release()
         _exoPlayer = null
     }
