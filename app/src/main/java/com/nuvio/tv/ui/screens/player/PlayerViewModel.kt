@@ -645,7 +645,6 @@ class PlayerViewModel @Inject constructor(
                                 } else {
                                     cancelPauseOverlay()
                                 }
-                                stopProgressUpdates()
                                 stopWatchProgressSaving()
                                 // Save progress when paused
                                 saveWatchProgress()
@@ -1327,6 +1326,18 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    private fun syncProgressState() {
+        _exoPlayer?.let { player ->
+            _uiState.update {
+                it.copy(
+                    currentPosition = player.currentPosition.coerceAtLeast(0L),
+                    duration = player.duration.coerceAtLeast(0L),
+                    bufferedPosition = player.bufferedPosition.coerceAtLeast(0L)
+                )
+            }
+        }
+    }
+
     private fun startProgressUpdates() {
         progressJob?.cancel()
         progressJob = viewModelScope.launch {
@@ -1494,6 +1505,7 @@ class PlayerViewModel @Inject constructor(
                 _exoPlayer?.let { player ->
                     player.seekTo((player.currentPosition + 10000).coerceAtMost(player.duration))
                 }
+                syncProgressState()
                 if (_uiState.value.showControls) {
                     scheduleHideControls()
                 }
@@ -1502,12 +1514,14 @@ class PlayerViewModel @Inject constructor(
                 _exoPlayer?.let { player ->
                     player.seekTo((player.currentPosition - 10000).coerceAtLeast(0))
                 }
+                syncProgressState()
                 if (_uiState.value.showControls) {
                     scheduleHideControls()
                 }
             }
             is PlayerEvent.OnSeekTo -> {
                 _exoPlayer?.seekTo(event.position)
+                syncProgressState()
                 if (_uiState.value.showControls) {
                     scheduleHideControls()
                 }
