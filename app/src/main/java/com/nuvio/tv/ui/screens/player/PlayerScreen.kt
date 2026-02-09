@@ -268,6 +268,14 @@ fun PlayerScreen(
                             viewModel.onEvent(PlayerEvent.OnPlayPause)
                             true
                         }
+                        KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                            viewModel.onEvent(PlayerEvent.OnPlay)
+                            true
+                        }
+                        KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                            viewModel.onEvent(PlayerEvent.OnPause)
+                            true
+                        }
                         KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
                             viewModel.onEvent(PlayerEvent.OnSeekForward)
                             true

@@ -110,6 +110,8 @@ data class TrackInfo(
 
 sealed class PlayerEvent {
     data object OnPlayPause : PlayerEvent()
+    data object OnPlay : PlayerEvent()
+    data object OnPause : PlayerEvent()
     data object OnSeekForward : PlayerEvent()
     data object OnSeekBackward : PlayerEvent()
     data object OnSeekForwardFromControls : PlayerEvent()

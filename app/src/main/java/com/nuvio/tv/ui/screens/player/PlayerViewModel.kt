@@ -1515,6 +1515,26 @@ class PlayerViewModel @Inject constructor(
                 }
                 showControlsTemporarily()
             }
+            PlayerEvent.OnPlay -> {
+                _exoPlayer?.let { player ->
+                    if (!player.isPlaying) {
+                        userPausedManually = false
+                        cancelPauseOverlay()
+                        player.play()
+                    }
+                }
+                showControlsTemporarily()
+            }
+            PlayerEvent.OnPause -> {
+                _exoPlayer?.let { player ->
+                    if (player.isPlaying) {
+                        userPausedManually = true
+                        player.pause()
+                        schedulePauseOverlay()
+                    }
+                }
+                showControlsTemporarily()
+            }
             PlayerEvent.OnSeekForward -> {
                 handleSeekStep(1, keepControls = false)
             }
