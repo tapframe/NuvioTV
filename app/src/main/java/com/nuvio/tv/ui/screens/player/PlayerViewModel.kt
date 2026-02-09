@@ -1956,10 +1956,6 @@ class PlayerViewModel @Inject constructor(
                 headers = headers,
                 okHttpClient = getOrCreateOkHttpClient()
             )
-            Log.d(TAG, "CHAPTERS: extracted ${chapters.size} chapters:")
-            chapters.forEachIndexed { i, ch ->
-                Log.d(TAG, "  [$i] startMs=${ch.startTimeMs}, title='${ch.title}'")
-            }
             _uiState.update { it.copy(chapters = chapters, currentChapterTitle = null) }
         }
     }
@@ -1991,7 +1987,6 @@ class PlayerViewModel @Inject constructor(
 
         val newTitle = formatChapterLabel(chapters, currentIndex)
         if (newTitle != _uiState.value.currentChapterTitle) {
-            Log.d(TAG, "CHAPTERS: updateCurrentChapter pos=${positionMs}ms, idx=$currentIndex, pending=$pendingChapterIndex, title='${chapters.getOrNull(currentIndex)?.title}', label='$newTitle'")
             _uiState.update { it.copy(currentChapterTitle = newTitle) }
         }
     }
