@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -27,10 +29,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.tv.foundation.lazy.list.TvLazyColumn
 import androidx.tv.foundation.lazy.list.TvLazyRow
 import androidx.tv.foundation.lazy.list.items
 import androidx.tv.material3.Border
@@ -86,67 +90,93 @@ fun LayoutSettingsContent(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
-    Column {
-        // Layout cards
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            LayoutCard(
-                layout = HomeLayout.CLASSIC,
-                isSelected = uiState.selectedLayout == HomeLayout.CLASSIC,
-                onClick = {
-                    viewModel.onEvent(LayoutSettingsEvent.SelectLayout(HomeLayout.CLASSIC))
-                },
-                modifier = Modifier.weight(1f)
-            )
-
-            LayoutCard(
-                layout = HomeLayout.GRID,
-                isSelected = uiState.selectedLayout == HomeLayout.GRID,
-                onClick = {
-                    viewModel.onEvent(LayoutSettingsEvent.SelectLayout(HomeLayout.GRID))
-                },
-                modifier = Modifier.weight(1f)
-            )
+    val sections = remember(uiState.availableCatalogs) {
+        buildList {
+            add(LayoutSettingsSection.SidebarToggle)
+            add(LayoutSettingsSection.LayoutCards)
+            if (uiState.availableCatalogs.isNotEmpty()) {
+                add(LayoutSettingsSection.HeroCatalog)
+            }
         }
+    }
 
-        // Hero catalog selector
-        if (uiState.availableCatalogs.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(20.dp))
+    TvLazyColumn(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        items(sections) { section ->
+            when (section) {
+                LayoutSettingsSection.LayoutCards -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(24.dp)
+                    ) {
+                        LayoutCard(
+                            layout = HomeLayout.CLASSIC,
+                            isSelected = uiState.selectedLayout == HomeLayout.CLASSIC,
+                            onClick = {
+                                viewModel.onEvent(LayoutSettingsEvent.SelectLayout(HomeLayout.CLASSIC))
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
 
-            Text(
-                text = "Hero Catalog",
-                style = MaterialTheme.typography.titleMedium,
-                color = NuvioColors.TextPrimary
-            )
-
-            Spacer(modifier = Modifier.height(2.dp))
-
-            Text(
-                text = "Choose which catalog powers the hero carousel",
-                style = MaterialTheme.typography.bodySmall,
-                color = NuvioColors.TextSecondary
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            TvLazyRow(
-                contentPadding = PaddingValues(end = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(uiState.availableCatalogs) { catalog ->
-                    CatalogChip(
-                        catalogInfo = catalog,
-                        isSelected = catalog.key == uiState.heroCatalogKey,
-                        onClick = {
-                            viewModel.onEvent(LayoutSettingsEvent.SelectHeroCatalog(catalog.key))
+                        LayoutCard(
+                            layout = HomeLayout.GRID,
+                            isSelected = uiState.selectedLayout == HomeLayout.GRID,
+                            onClick = {
+                                viewModel.onEvent(LayoutSettingsEvent.SelectLayout(HomeLayout.GRID))
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+                LayoutSettingsSection.SidebarToggle -> {
+                    SidebarToggle(
+                        isCollapsed = uiState.sidebarCollapsedByDefault,
+                        onToggle = {
+                            viewModel.onEvent(LayoutSettingsEvent.SetSidebarCollapsed(!uiState.sidebarCollapsedByDefault))
                         }
                     )
+                }
+                LayoutSettingsSection.HeroCatalog -> {
+                    Text(
+                        text = "Hero Catalog",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = NuvioColors.TextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Choose which catalog powers the hero carousel",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = NuvioColors.TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    TvLazyRow(
+                        contentPadding = PaddingValues(end = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(uiState.availableCatalogs) { catalog ->
+                            CatalogChip(
+                                catalogInfo = catalog,
+                                isSelected = catalog.key == uiState.heroCatalogKey,
+                                onClick = {
+                                    viewModel.onEvent(LayoutSettingsEvent.SelectHeroCatalog(catalog.key))
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+private enum class LayoutSettingsSection {
+    LayoutCards,
+    SidebarToggle,
+    HeroCatalog
 }
 
 @Composable
@@ -177,7 +207,7 @@ private fun LayoutCard(
             )
         ),
         shape = CardDefaults.shape(RoundedCornerShape(16.dp)),
-        scale = CardDefaults.scale(focusedScale = 1.02f)
+        scale = CardDefaults.scale(focusedScale = 1.0f, pressedScale = 1.0f)
     ) {
         Column(
             modifier = Modifier
@@ -233,6 +263,77 @@ private fun LayoutCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = NuvioColors.TextTertiary
             )
+        }
+    }
+}
+
+@Composable
+private fun SidebarToggle(
+    isCollapsed: Boolean,
+    onToggle: () -> Unit
+) {
+    var isFocused by remember { mutableStateOf(false) }
+
+    Card(
+        onClick = onToggle,
+        modifier = Modifier
+            .fillMaxWidth()
+            .onFocusChanged { isFocused = it.isFocused },
+        colors = CardDefaults.colors(
+            containerColor = NuvioColors.BackgroundCard,
+            focusedContainerColor = NuvioColors.FocusBackground
+        ),
+        border = CardDefaults.border(
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, NuvioColors.FocusRing),
+                shape = RoundedCornerShape(12.dp)
+            )
+        ),
+        shape = CardDefaults.shape(RoundedCornerShape(12.dp)),
+        scale = CardDefaults.scale(focusedScale = 1.0f, pressedScale = 1.0f)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Collapse Sidebar",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (isFocused) NuvioColors.TextPrimary else NuvioColors.TextSecondary
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Hide sidebar by default, only show when focused",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = NuvioColors.TextTertiary
+                )
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            // Toggle indicator
+            Box(
+                modifier = Modifier
+                    .width(48.dp)
+                    .height(28.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(
+                        if (isCollapsed) NuvioColors.FocusRing else Color.White.copy(alpha = 0.15f)
+                    )
+                    .padding(3.dp),
+                contentAlignment = if (isCollapsed) Alignment.CenterEnd else Alignment.CenterStart
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                )
+            }
         }
     }
 }

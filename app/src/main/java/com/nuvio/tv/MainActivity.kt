@@ -19,8 +19,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -81,6 +88,8 @@ class MainActivity : ComponentActivity() {
                     // Wait for DataStore to emit before rendering to avoid flickering
                     val layoutChosen = hasChosenLayout ?: return@Surface
 
+                    val sidebarCollapsed by layoutPreferenceDataStore.sidebarCollapsedByDefault.collectAsState(initial = true)
+
                     val updateViewModel: UpdateViewModel = hiltViewModel(this@MainActivity)
                     val updateState by updateViewModel.uiState.collectAsState()
 
@@ -120,8 +129,10 @@ class MainActivity : ComponentActivity() {
 
                     val showSidebar = currentRoute in rootRoutes
 
-                    val closedDrawerWidth = 72.dp
+                    val closedDrawerWidth = if (sidebarCollapsed) 0.dp else 72.dp
                     val openDrawerWidth = 260.dp
+
+                    val focusManager = LocalFocusManager.current
 
                     ModalNavigationDrawer(
                         drawerState = drawerState,
@@ -135,6 +146,17 @@ class MainActivity : ComponentActivity() {
                                         .background(NuvioColors.Background)
                                         .padding(12.dp)
                                         .selectableGroup()
+                                        .onPreviewKeyEvent { keyEvent ->
+                                            if (keyEvent.key == Key.DirectionRight &&
+                                                keyEvent.type == KeyEventType.KeyDown
+                                            ) {
+                                                drawerState.setValue(DrawerValue.Closed)
+                                                focusManager.moveFocus(FocusDirection.Right)
+                                                true
+                                            } else {
+                                                false
+                                            }
+                                        }
                                 ) {
                                     if (drawerValue == DrawerValue.Open) {
                                         Image(

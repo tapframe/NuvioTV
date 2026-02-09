@@ -25,6 +25,7 @@ class LayoutPreferenceDataStore @Inject constructor(
     private val layoutKey = stringPreferencesKey("selected_layout")
     private val hasChosenKey = booleanPreferencesKey("has_chosen_layout")
     private val heroCatalogKey = stringPreferencesKey("hero_catalog_key")
+    private val sidebarCollapsedKey = booleanPreferencesKey("sidebar_collapsed_by_default")
 
     val selectedLayout: Flow<HomeLayout> = dataStore.data.map { prefs ->
         val layoutName = prefs[layoutKey] ?: HomeLayout.CLASSIC.name
@@ -43,6 +44,10 @@ class LayoutPreferenceDataStore @Inject constructor(
         prefs[heroCatalogKey]
     }
 
+    val sidebarCollapsedByDefault: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[sidebarCollapsedKey] ?: true
+    }
+
     suspend fun setLayout(layout: HomeLayout) {
         dataStore.edit { prefs ->
             prefs[layoutKey] = layout.name
@@ -53,6 +58,12 @@ class LayoutPreferenceDataStore @Inject constructor(
     suspend fun setHeroCatalogKey(catalogKey: String) {
         dataStore.edit { prefs ->
             prefs[heroCatalogKey] = catalogKey
+        }
+    }
+
+    suspend fun setSidebarCollapsedByDefault(collapsed: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[sidebarCollapsedKey] = collapsed
         }
     }
 }

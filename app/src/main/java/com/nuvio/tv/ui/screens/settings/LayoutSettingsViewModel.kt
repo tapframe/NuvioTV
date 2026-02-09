@@ -18,7 +18,8 @@ data class LayoutSettingsUiState(
     val selectedLayout: HomeLayout = HomeLayout.CLASSIC,
     val hasChosen: Boolean = false,
     val availableCatalogs: List<CatalogInfo> = emptyList(),
-    val heroCatalogKey: String? = null
+    val heroCatalogKey: String? = null,
+    val sidebarCollapsedByDefault: Boolean = true
 )
 
 data class CatalogInfo(
@@ -30,6 +31,7 @@ data class CatalogInfo(
 sealed class LayoutSettingsEvent {
     data class SelectLayout(val layout: HomeLayout) : LayoutSettingsEvent()
     data class SelectHeroCatalog(val catalogKey: String) : LayoutSettingsEvent()
+    data class SetSidebarCollapsed(val collapsed: Boolean) : LayoutSettingsEvent()
 }
 
 @HiltViewModel
@@ -57,6 +59,11 @@ class LayoutSettingsViewModel @Inject constructor(
                 _uiState.update { it.copy(heroCatalogKey = key) }
             }
         }
+        viewModelScope.launch {
+            layoutPreferenceDataStore.sidebarCollapsedByDefault.collectLatest { collapsed ->
+                _uiState.update { it.copy(sidebarCollapsedByDefault = collapsed) }
+            }
+        }
         loadAvailableCatalogs()
     }
 
@@ -64,6 +71,7 @@ class LayoutSettingsViewModel @Inject constructor(
         when (event) {
             is LayoutSettingsEvent.SelectLayout -> selectLayout(event.layout)
             is LayoutSettingsEvent.SelectHeroCatalog -> selectHeroCatalog(event.catalogKey)
+            is LayoutSettingsEvent.SetSidebarCollapsed -> setSidebarCollapsed(event.collapsed)
         }
     }
 
@@ -76,6 +84,12 @@ class LayoutSettingsViewModel @Inject constructor(
     private fun selectHeroCatalog(catalogKey: String) {
         viewModelScope.launch {
             layoutPreferenceDataStore.setHeroCatalogKey(catalogKey)
+        }
+    }
+
+    private fun setSidebarCollapsed(collapsed: Boolean) {
+        viewModelScope.launch {
+            layoutPreferenceDataStore.setSidebarCollapsedByDefault(collapsed)
         }
     }
 
