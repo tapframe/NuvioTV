@@ -717,6 +717,9 @@ fun PlaybackSettingsContent(
                         onValueChange = { newValue ->
                             coroutineScope.launch {
                                 viewModel.setBufferMinBufferMs(newValue * 1000)
+                                if (newValue * 1000 > playerSettings.bufferSettings.maxBufferMs) {
+                                    viewModel.setBufferMaxBufferMs(newValue * 1000)
+                                }
                             }
                         }
                     )
