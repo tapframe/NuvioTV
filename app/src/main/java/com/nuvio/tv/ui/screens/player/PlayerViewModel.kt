@@ -42,6 +42,7 @@ import com.nuvio.tv.domain.model.Chapter
 import com.nuvio.tv.data.local.AudioLanguageOption
 import com.nuvio.tv.data.local.LibassRenderType
 import com.nuvio.tv.data.local.PlayerSettingsDataStore
+import com.nuvio.tv.data.local.SeekStepProfile
 import com.nuvio.tv.domain.model.Stream
 import com.nuvio.tv.domain.model.Video
 import com.nuvio.tv.domain.model.WatchProgress
@@ -192,6 +193,13 @@ class PlayerViewModel @Inject constructor(
     private var chapterExtractionJob: Job? = null
     private var pendingChapterIndex: Int = -1
 
+    // Seek step escalation
+    private var seekStepIndex: Int = 0
+    private var lastSeekDirection: Int = 0 // +1 for forward, -1 for backward
+    private var seekResetJob: Job? = null
+    private var seekProgressBarJob: Job? = null
+    private var currentSeekStepProfile: SeekStepProfile = SeekStepProfile.MODERATE
+
     init {
         initializePlayer(currentStreamUrl, currentHeaders)
         loadSavedProgressFor(currentSeason, currentEpisode)
@@ -262,6 +270,8 @@ class PlayerViewModel @Inject constructor(
                         hideChapterTitles = settings.hideChapterTitles
                     )
                 }
+
+                currentSeekStepProfile = settings.seekStepProfile
 
                 if (!settings.pauseOverlayEnabled) {
                     cancelPauseOverlay()
@@ -1506,20 +1516,16 @@ class PlayerViewModel @Inject constructor(
                 showControlsTemporarily()
             }
             PlayerEvent.OnSeekForward -> {
-                _exoPlayer?.let { player ->
-                    player.seekTo((player.currentPosition + 10000).coerceAtMost(player.duration))
-                }
-                if (_uiState.value.showControls) {
-                    scheduleHideControls()
-                }
+                handleSeekStep(1, keepControls = false)
             }
             PlayerEvent.OnSeekBackward -> {
-                _exoPlayer?.let { player ->
-                    player.seekTo((player.currentPosition - 10000).coerceAtLeast(0))
-                }
-                if (_uiState.value.showControls) {
-                    scheduleHideControls()
-                }
+                handleSeekStep(-1, keepControls = false)
+            }
+            PlayerEvent.OnSeekForwardFromControls -> {
+                handleSeekStep(1, keepControls = true)
+            }
+            PlayerEvent.OnSeekBackwardFromControls -> {
+                handleSeekStep(-1, keepControls = true)
             }
             is PlayerEvent.OnSeekTo -> {
                 _exoPlayer?.seekTo(event.position)
@@ -1679,6 +1685,92 @@ class PlayerViewModel @Inject constructor(
                 episodeSelectedAddonFilter = addonName,
                 episodeFilteredStreams = filteredStreams
             )
+        }
+    }
+
+    private fun handleSeekStep(direction: Int, keepControls: Boolean = false) {
+        // Reset step index if direction changed
+        if (direction != lastSeekDirection) {
+            seekStepIndex = 0
+            lastSeekDirection = direction
+        }
+
+        val steps = currentSeekStepProfile.steps
+        val stepSeconds = steps[seekStepIndex.coerceAtMost(steps.lastIndex)]
+        val seekMs = stepSeconds * 1000L
+
+        val newPosition = _exoPlayer?.let { player ->
+            val pos = if (direction > 0) {
+                (player.currentPosition + seekMs).coerceAtMost(player.duration)
+            } else {
+                (player.currentPosition - seekMs).coerceAtLeast(0)
+            }
+            player.seekTo(pos)
+            pos
+        }
+
+        // Format feedback text
+        val sign = if (direction > 0) "+" else "\u2212"
+        val feedbackText = "$sign${formatSeekDuration(stepSeconds)}"
+
+        // Advance step index for next press
+        val nextIndex = (seekStepIndex + 1).coerceAtMost(steps.lastIndex)
+        val nextStepSeconds = steps[nextIndex]
+
+        seekStepIndex = nextIndex
+
+        // Update chapter title for new position
+        val chapters = _uiState.value.chapters
+        val chapterTitle = if (chapters.isNotEmpty() && newPosition != null) {
+            val chapterIndex = chapters.indexOfLast { it.startTimeMs <= newPosition }
+            formatChapterLabel(chapters, chapterIndex)
+        } else {
+            _uiState.value.currentChapterTitle
+        }
+
+        _uiState.update {
+            it.copy(
+                currentPosition = newPosition ?: it.currentPosition,
+                currentChapterTitle = chapterTitle,
+                seekFeedbackText = feedbackText,
+                seekFeedbackVisible = true,
+                seekDirection = direction,
+                seekPressCount = it.seekPressCount + 1
+            )
+        }
+
+        if (keepControls) {
+            scheduleHideControls()
+        } else {
+            showSeekProgressBarTemporarily()
+        }
+
+        // Cancel previous reset job and start a new one
+        seekResetJob?.cancel()
+        seekResetJob = viewModelScope.launch {
+            delay(2000L)
+            seekStepIndex = 0
+            lastSeekDirection = 0
+            _uiState.update {
+                it.copy(seekFeedbackVisible = false)
+            }
+        }
+    }
+
+    private fun formatSeekDuration(seconds: Int): String {
+        return when {
+            seconds >= 60 -> "${seconds / 60}m${if (seconds % 60 > 0) " ${seconds % 60}s" else ""}"
+            else -> "${seconds}s"
+        }
+    }
+
+    private fun showSeekProgressBarTemporarily() {
+        _uiState.update { it.copy(showSeekProgressBar = true, showControls = false) }
+        hideControlsJob?.cancel()
+        seekProgressBarJob?.cancel()
+        seekProgressBarJob = viewModelScope.launch {
+            delay(2000L)
+            _uiState.update { it.copy(showSeekProgressBar = false) }
         }
     }
 
@@ -1936,7 +2028,7 @@ class PlayerViewModel @Inject constructor(
                     currentChapterTitle = formatChapterLabel(chapters, nextIndex)
                 )
             }
-            showControlsTemporarily()
+            showSeekProgressBarTemporarily()
         }
     }
 
@@ -1970,7 +2062,7 @@ class PlayerViewModel @Inject constructor(
                 currentChapterTitle = formatChapterLabel(chapters, targetIndex)
             )
         }
-        showControlsTemporarily()
+        showSeekProgressBarTemporarily()
     }
 
     private fun releasePlayer() {

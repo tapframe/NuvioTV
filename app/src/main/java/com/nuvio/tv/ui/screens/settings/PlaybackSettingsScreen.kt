@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.History
@@ -78,6 +79,7 @@ import com.nuvio.tv.data.local.AVAILABLE_SUBTITLE_LANGUAGES
 import com.nuvio.tv.data.local.AudioLanguageOption
 import com.nuvio.tv.data.local.LibassRenderType
 import com.nuvio.tv.data.local.PlayerSettings
+import com.nuvio.tv.data.local.SeekStepProfile
 import com.nuvio.tv.data.local.TrailerSettings
 import com.nuvio.tv.ui.theme.NuvioColors
 import kotlinx.coroutines.launch
@@ -183,6 +185,7 @@ fun PlaybackSettingsContent(
     var showOutlineColorDialog by remember { mutableStateOf(false) }
     var showAudioLanguageDialog by remember { mutableStateOf(false) }
     var showDecoderPriorityDialog by remember { mutableStateOf(false) }
+    var showSeekStepProfileDialog by remember { mutableStateOf(false) }
     var showAdvancedExperimental by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -249,14 +252,23 @@ fun PlaybackSettingsContent(
                 )
             }
 
-            // Chapters Section Header
+            // Seeking & Chapters Header
             item {
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "Chapters",
+                    text = "Seeking & Chapters",
                     style = MaterialTheme.typography.titleMedium,
                     color = NuvioColors.TextSecondary,
                     modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
+
+            item {
+                NavigationSettingsItem(
+                    icon = Icons.Default.FastForward,
+                    title = "Seek Step Profile",
+                    subtitle = playerSettings.seekStepProfile.displayName,
+                    onClick = { showSeekStepProfileDialog = true }
                 )
             }
 
@@ -992,6 +1004,20 @@ fun PlaybackSettingsContent(
                 showAudioLanguageDialog = false
             },
             onDismiss = { showAudioLanguageDialog = false }
+        )
+    }
+
+    // Seek Step Profile Dialog
+    if (showSeekStepProfileDialog) {
+        SeekStepProfileDialog(
+            selectedProfile = playerSettings.seekStepProfile,
+            onProfileSelected = { profile ->
+                coroutineScope.launch {
+                    viewModel.setSeekStepProfile(profile)
+                }
+                showSeekStepProfileDialog = false
+            },
+            onDismiss = { showSeekStepProfileDialog = false }
         )
     }
 
@@ -1842,6 +1868,109 @@ private fun AudioLanguageSelectionDialog(
                                     color = if (isSelected) NuvioColors.Primary else NuvioColors.TextPrimary,
                                     modifier = Modifier.weight(1f)
                                 )
+                                if (isSelected) {
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Selected",
+                                        tint = NuvioColors.Primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SeekStepProfileDialog(
+    selectedProfile: SeekStepProfile,
+    onProfileSelected: (SeekStepProfile) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Card(
+            onClick = { },
+            colors = CardDefaults.colors(
+                containerColor = NuvioColors.BackgroundCard
+            ),
+            shape = CardDefaults.shape(shape = RoundedCornerShape(16.dp))
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(420.dp)
+                    .padding(24.dp)
+            ) {
+                Text(
+                    text = "Seek Step Profile",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = NuvioColors.TextPrimary
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Controls how D-pad left/right seeking accelerates with successive presses",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = NuvioColors.TextSecondary
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                TvLazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val profiles = SeekStepProfile.entries
+                    items(profiles.size) { index ->
+                        val profile = profiles[index]
+                        val isSelected = profile == selectedProfile
+                        var isFocused by remember { mutableStateOf(false) }
+
+                        Card(
+                            onClick = { onProfileSelected(profile) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .then(if (index == 0) Modifier.focusRequester(focusRequester) else Modifier)
+                                .onFocusChanged { isFocused = it.isFocused },
+                            colors = CardDefaults.colors(
+                                containerColor = if (isSelected) NuvioColors.Primary.copy(alpha = 0.2f) else NuvioColors.BackgroundElevated,
+                                focusedContainerColor = NuvioColors.FocusBackground
+                            ),
+                            border = CardDefaults.border(
+                                focusedBorder = Border(
+                                    border = BorderStroke(2.dp, NuvioColors.FocusRing),
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                            ),
+                            shape = CardDefaults.shape(shape = RoundedCornerShape(8.dp)),
+                            scale = CardDefaults.scale(focusedScale = 1.02f)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = profile.displayName,
+                                        color = if (isSelected) NuvioColors.Primary else NuvioColors.TextPrimary,
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = profile.description,
+                                        color = NuvioColors.TextSecondary,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
                                 if (isSelected) {
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Icon(

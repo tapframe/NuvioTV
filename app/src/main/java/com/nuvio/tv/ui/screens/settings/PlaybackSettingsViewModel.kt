@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import com.nuvio.tv.data.local.LibassRenderType
 import com.nuvio.tv.data.local.PlayerSettings
 import com.nuvio.tv.data.local.PlayerSettingsDataStore
+import com.nuvio.tv.data.local.SeekStepProfile
 import com.nuvio.tv.data.local.TrailerSettings
 import com.nuvio.tv.data.local.TrailerSettingsDataStore
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -67,6 +68,10 @@ class PlaybackSettingsViewModel @Inject constructor(
 
     suspend fun setHideChapterTitles(hide: Boolean) {
         playerSettingsDataStore.setHideChapterTitles(hide)
+    }
+
+    suspend fun setSeekStepProfile(profile: SeekStepProfile) {
+        playerSettingsDataStore.setSeekStepProfile(profile)
     }
 
     /**

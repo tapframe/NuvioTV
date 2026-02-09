@@ -8,12 +8,14 @@ package com.nuvio.tv.ui.screens.player
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -36,6 +38,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Pause
@@ -59,6 +63,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -74,9 +79,11 @@ import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import androidx.tv.foundation.lazy.list.TvLazyColumn
 import androidx.tv.foundation.lazy.list.items
+import androidx.tv.material3.Border
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
@@ -92,6 +99,7 @@ import com.nuvio.tv.ui.theme.NuvioColors
 import com.nuvio.tv.ui.theme.NuvioTheme
 import java.util.concurrent.TimeUnit
 
+@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(
     viewModel: PlayerViewModel = hiltViewModel(),
@@ -232,34 +240,27 @@ fun PlayerScreen(
                         }
                         KeyEvent.KEYCODE_DPAD_UP -> {
                             val canChapterSkip = (uiState.isPlaying || uiState.isBuffering) && uiState.chapterSkipEnabled && uiState.chapters.isNotEmpty()
-                            if (canChapterSkip) {
+                            if (!uiState.showControls && canChapterSkip) {
                                 viewModel.onEvent(PlayerEvent.OnNextChapter)
+                                true
                             } else if (!uiState.showControls) {
                                 viewModel.onEvent(PlayerEvent.OnToggleControls)
+                                true
                             } else {
-                                val skipVisible = uiState.activeSkipInterval != null && !uiState.skipIntervalDismissed
-                                if (skipVisible) {
-                                    try {
-                                        skipIntroFocusRequester.requestFocus()
-                                    } catch (_: Exception) {
-                                        // Focus requester may not be ready yet
-                                    }
-                                } else {
-                                    viewModel.hideControls()
-                                }
+                                // Controls visible: let focus system handle navigation
+                                false
                             }
-                            true
                         }
                         KeyEvent.KEYCODE_DPAD_DOWN -> {
                             val canChapterSkip = (uiState.isPlaying || uiState.isBuffering) && uiState.chapterSkipEnabled && uiState.chapters.isNotEmpty()
-                            if (canChapterSkip) {
+                            if (!uiState.showControls && canChapterSkip) {
                                 viewModel.onEvent(PlayerEvent.OnPreviousChapter)
                                 true
                             } else if (!uiState.showControls) {
                                 viewModel.onEvent(PlayerEvent.OnToggleControls)
                                 true
                             } else {
-                                // Let focus system handle navigation when controls are visible
+                                // Controls visible: let focus system handle navigation
                                 false
                             }
                         }
@@ -388,6 +389,103 @@ fun PlayerScreen(
             )
         }
 
+        // Seek step feedback overlay (left-aligned for backward, right-aligned for forward)
+        val seekPulseScale = remember { Animatable(1f) }
+        LaunchedEffect(uiState.seekPressCount) {
+            if (uiState.seekPressCount > 0) {
+                seekPulseScale.snapTo(1.15f)
+                seekPulseScale.animateTo(1f, animationSpec = tween(200))
+            }
+        }
+
+        AnimatedVisibility(
+            visible = uiState.seekFeedbackVisible,
+            enter = fadeIn(animationSpec = tween(150)),
+            exit = fadeOut(animationSpec = tween(300)),
+            modifier = Modifier
+                .align(
+                    if (uiState.seekDirection > 0) Alignment.CenterEnd else Alignment.CenterStart
+                )
+                .padding(horizontal = 48.dp)
+                .graphicsLayer {
+                    scaleX = seekPulseScale.value
+                    scaleY = seekPulseScale.value
+                }
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .background(
+                        Color.Black.copy(alpha = 0.6f),
+                        RoundedCornerShape(16.dp)
+                    )
+                    .padding(horizontal = 32.dp, vertical = 16.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (uiState.seekDirection < 0) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                    Text(
+                        text = uiState.seekFeedbackText ?: "",
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = Color.White
+                    )
+                    if (uiState.seekDirection > 0) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Seek-only progress bar (shown when seeking/chapter-skipping without controls visible)
+        AnimatedVisibility(
+            visible = uiState.showSeekProgressBar && !uiState.showControls,
+            enter = fadeIn(animationSpec = tween(150)),
+            exit = fadeOut(animationSpec = tween(300)),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 32.dp, vertical = 12.dp)
+        ) {
+            Column {
+                ProgressBar(
+                    currentPosition = uiState.currentPosition,
+                    duration = uiState.duration,
+                    chapters = uiState.chapters,
+                    onSeekTo = { },
+                    showPositionIndicator = true
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "${formatTime(uiState.currentPosition)} / ${formatTime(uiState.duration)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.9f)
+                )
+                uiState.currentChapterTitle?.takeIf { it.isNotBlank() }?.let { chapterTitle ->
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = chapterTitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+
         // Skip Intro button (bottom-left, independent of controls)
         SkipIntroButton(
             interval = uiState.activeSkipInterval,
@@ -422,8 +520,8 @@ fun PlayerScreen(
                 playPauseFocusRequester = playPauseFocusRequester,
                 hideTopInfo = uiState.showParentalGuide,
                 onPlayPause = { viewModel.onEvent(PlayerEvent.OnPlayPause) },
-                onSeekForward = { viewModel.onEvent(PlayerEvent.OnSeekForward) },
-                onSeekBackward = { viewModel.onEvent(PlayerEvent.OnSeekBackward) },
+                onSeekForward = { viewModel.onEvent(PlayerEvent.OnSeekForwardFromControls) },
+                onSeekBackward = { viewModel.onEvent(PlayerEvent.OnSeekBackwardFromControls) },
                 onSeekTo = { viewModel.onEvent(PlayerEvent.OnSeekTo(it)) },
                 onShowEpisodesPanel = { viewModel.onEvent(PlayerEvent.OnShowEpisodesPanel) },
                 onShowSourcesPanel = { viewModel.onEvent(PlayerEvent.OnShowSourcesPanel) },
@@ -668,25 +766,59 @@ private fun PlayerControlsOverlay(
                 .align(Alignment.BottomCenter)
                 .padding(horizontal = 32.dp, vertical = 24.dp)
         ) {
-            // Chapter title above progress bar
-            if (!uiState.currentChapterTitle.isNullOrBlank()) {
-                Text(
-                    text = uiState.currentChapterTitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-            }
+            // Focusable progress bar area — left/right seeks, up/down navigates menu
+            var progressBarFocused by remember { mutableStateOf(false) }
+            Card(
+                onClick = { },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged {
+                        progressBarFocused = it.hasFocus
+                        if (it.hasFocus) onResetHideTimer()
+                    }
+                    .onKeyEvent { event ->
+                        if (event.nativeKeyEvent.action != KeyEvent.ACTION_DOWN) return@onKeyEvent false
+                        when (event.nativeKeyEvent.keyCode) {
+                            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                onSeekBackward()
+                                true
+                            }
+                            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                onSeekForward()
+                                true
+                            }
+                            else -> false
+                        }
+                    },
+                colors = CardDefaults.colors(
+                    containerColor = Color.Transparent
+                ),
+                border = CardDefaults.border(focusedBorder = Border.None),
+                scale = CardDefaults.scale(focusedScale = 1f)
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) {
+                    // Chapter title above progress bar
+                    if (!uiState.currentChapterTitle.isNullOrBlank()) {
+                        Text(
+                            text = uiState.currentChapterTitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                    }
 
-            // Progress bar
-            ProgressBar(
-                currentPosition = uiState.currentPosition,
-                duration = uiState.duration,
-                chapters = uiState.chapters,
-                onSeekTo = onSeekTo
-            )
+                    // Progress bar
+                    ProgressBar(
+                        currentPosition = uiState.currentPosition,
+                        duration = uiState.duration,
+                        chapters = uiState.chapters,
+                        onSeekTo = onSeekTo,
+                        showPositionIndicator = progressBarFocused
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -811,7 +943,8 @@ private fun ProgressBar(
     currentPosition: Long,
     duration: Long,
     chapters: List<Chapter> = emptyList(),
-    onSeekTo: (Long) -> Unit
+    onSeekTo: (Long) -> Unit,
+    showPositionIndicator: Boolean = false
 ) {
     val progress = if (duration > 0) {
         (currentPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
@@ -865,6 +998,34 @@ private fun ProgressBar(
                         drawPath(path, color = Color.White.copy(alpha = 0.85f))
                     }
                 }
+            }
+        }
+
+        // Position indicator (vertical line at current seek position)
+        if (showPositionIndicator && duration > 0) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val lineWidth = 3.dp.toPx()
+                val x = (animatedProgress * size.width).coerceIn(lineWidth / 2, size.width - lineWidth / 2)
+                val trackHeight = 6.dp.toPx()
+                val trackTop = (size.height - trackHeight) / 2
+                val trackBottom = trackTop + trackHeight
+                val overshoot = 2.dp.toPx()
+                // Glow
+                drawLine(
+                    color = Color.White.copy(alpha = 0.4f),
+                    start = Offset(x, trackTop - overshoot),
+                    end = Offset(x, trackBottom + overshoot),
+                    strokeWidth = lineWidth + 3.dp.toPx(),
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                )
+                // Main line
+                drawLine(
+                    color = Color.White,
+                    start = Offset(x, trackTop - overshoot),
+                    end = Offset(x, trackBottom + overshoot),
+                    strokeWidth = lineWidth,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                )
             }
         }
     }

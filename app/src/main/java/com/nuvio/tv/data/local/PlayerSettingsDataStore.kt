@@ -111,6 +111,28 @@ object AudioLanguageOption {
 }
 
 /**
+ * Seek step profiles for D-pad left/right seeking.
+ * Each profile defines escalating step durations (in seconds) for successive presses.
+ */
+enum class SeekStepProfile(val displayName: String, val description: String, val steps: List<Int>) {
+    CONSTANT(
+        "Constant (10s)",
+        "Every press seeks by 10 seconds",
+        listOf(10)
+    ),
+    MODERATE(
+        "Moderate",
+        "Gradually increases: 5s, 10s, 15s, 30s, 60s, 120s",
+        listOf(5, 5, 10, 10, 15, 15, 30, 30, 60, 60, 120, 120)
+    ),
+    ACCELERATING(
+        "Accelerating",
+        "Aggressively increases: 5s, 10s, 30s, 60s, 2min",
+        listOf(5, 5, 10, 10, 30, 30, 60, 60, 120, 120)
+    )
+}
+
+/**
  * Data class representing player settings
  */
 data class PlayerSettings(
@@ -128,8 +150,10 @@ data class PlayerSettings(
     // Display settings
     val frameRateMatching: Boolean = false,
     // Chapter navigation
-    val chapterSkipEnabled: Boolean = true,
-    val hideChapterTitles: Boolean = false
+    val chapterSkipEnabled: Boolean = false,
+    val hideChapterTitles: Boolean = false,
+    // Seek step profile
+    val seekStepProfile: SeekStepProfile = SeekStepProfile.MODERATE
 )
 
 /**
@@ -164,6 +188,7 @@ class PlayerSettingsDataStore @Inject constructor(
     private val frameRateMatchingKey = booleanPreferencesKey("frame_rate_matching")
     private val chapterSkipEnabledKey = booleanPreferencesKey("chapter_skip_enabled")
     private val hideChapterTitlesKey = booleanPreferencesKey("hide_chapter_titles")
+    private val seekStepProfileKey = stringPreferencesKey("seek_step_profile")
 
     // Subtitle style settings keys
     private val subtitlePreferredLanguageKey = stringPreferencesKey("subtitle_preferred_language")
@@ -205,6 +230,9 @@ class PlayerSettingsDataStore @Inject constructor(
             frameRateMatching = prefs[frameRateMatchingKey] ?: false,
             chapterSkipEnabled = prefs[chapterSkipEnabledKey] ?: true,
             hideChapterTitles = prefs[hideChapterTitlesKey] ?: false,
+            seekStepProfile = prefs[seekStepProfileKey]?.let {
+                try { SeekStepProfile.valueOf(it) } catch (e: Exception) { SeekStepProfile.MODERATE }
+            } ?: SeekStepProfile.MODERATE,
             subtitleStyle = SubtitleStyleSettings(
                 preferredLanguage = prefs[subtitlePreferredLanguageKey] ?: "en",
                 secondaryPreferredLanguage = prefs[subtitleSecondaryLanguageKey],
@@ -299,6 +327,12 @@ class PlayerSettingsDataStore @Inject constructor(
     suspend fun setHideChapterTitles(hide: Boolean) {
         dataStore.edit { prefs ->
             prefs[hideChapterTitlesKey] = hide
+        }
+    }
+
+    suspend fun setSeekStepProfile(profile: SeekStepProfile) {
+        dataStore.edit { prefs ->
+            prefs[seekStepProfileKey] = profile.name
         }
     }
 

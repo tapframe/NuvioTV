@@ -90,7 +90,13 @@ data class PlayerUiState(
     val chapters: List<Chapter> = emptyList(),
     val currentChapterTitle: String? = null,
     val chapterSkipEnabled: Boolean = true,
-    val hideChapterTitles: Boolean = false
+    val hideChapterTitles: Boolean = false,
+    // Seek step feedback
+    val seekFeedbackText: String? = null,
+    val seekFeedbackVisible: Boolean = false,
+    val seekDirection: Int = 1, // +1 forward (right-aligned), -1 backward (left-aligned)
+    val seekPressCount: Int = 0, // increments on each press, drives pulse animation
+    val showSeekProgressBar: Boolean = false // standalone progress bar during seek/chapter skip
 )
 
 data class TrackInfo(
@@ -106,6 +112,8 @@ sealed class PlayerEvent {
     data object OnPlayPause : PlayerEvent()
     data object OnSeekForward : PlayerEvent()
     data object OnSeekBackward : PlayerEvent()
+    data object OnSeekForwardFromControls : PlayerEvent()
+    data object OnSeekBackwardFromControls : PlayerEvent()
     data class OnSeekTo(val position: Long) : PlayerEvent()
     data class OnSelectAudioTrack(val index: Int) : PlayerEvent()
     data class OnSelectSubtitleTrack(val index: Int) : PlayerEvent()
