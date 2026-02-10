@@ -25,8 +25,7 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.nuvio.tv.ui.components.LoadingIndicator
-
-private val OverlayBackground = Color(0xFF1a538b)
+import com.nuvio.tv.ui.theme.NuvioColors
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -52,7 +51,7 @@ fun ImmersiveMetadataOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(OverlayBackground)
+                .background(NuvioColors.FocusBackground)
                 .padding(16.dp),
             contentAlignment = Alignment.CenterStart
         ) {

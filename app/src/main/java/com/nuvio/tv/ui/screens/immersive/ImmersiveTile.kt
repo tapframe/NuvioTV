@@ -15,8 +15,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.nuvio.tv.domain.model.MetaPreview
-
-private val FocusBorderColor = Color(0xFFf3ab02)
+import com.nuvio.tv.ui.theme.NuvioColors
 
 @Composable
 fun ImmersiveTile(
@@ -35,7 +34,7 @@ fun ImmersiveTile(
         modifier = modifier
             .then(
                 if (isFocused) {
-                    Modifier.background(FocusBorderColor)
+                    Modifier.background(NuvioColors.FocusRing)
                 } else {
                     Modifier
                 }
