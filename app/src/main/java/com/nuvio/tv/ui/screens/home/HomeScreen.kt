@@ -98,6 +98,18 @@ fun HomeScreen(
                             viewModel.saveGridFocusState(vi, vo)
                         }
                     )
+                    HomeLayout.IMMERSIVE -> ClassicHomeContent(
+                        uiState = uiState,
+                        focusState = focusState,
+                        onNavigateToDetail = onNavigateToDetail,
+                        onNavigateToCatalogSeeAll = onNavigateToCatalogSeeAll,
+                        onRemoveContinueWatching = { contentId ->
+                            viewModel.onEvent(HomeEvent.OnRemoveContinueWatching(contentId))
+                        },
+                        onSaveFocusState = { vi, vo, ri, ii, m ->
+                            viewModel.saveFocusState(vi, vo, ri, ii, m)
+                        }
+                    )
                 }
             }
         }

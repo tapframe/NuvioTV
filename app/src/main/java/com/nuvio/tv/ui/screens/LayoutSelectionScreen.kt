@@ -38,6 +38,7 @@ import androidx.tv.material3.Text
 import com.nuvio.tv.domain.model.HomeLayout
 import com.nuvio.tv.ui.components.ClassicLayoutPreview
 import com.nuvio.tv.ui.components.GridLayoutPreview
+import com.nuvio.tv.ui.components.ImmersiveLayoutPreview
 import com.nuvio.tv.ui.screens.settings.LayoutSettingsEvent
 import com.nuvio.tv.ui.screens.settings.LayoutSettingsViewModel
 import com.nuvio.tv.ui.theme.NuvioColors
@@ -45,7 +46,7 @@ import com.nuvio.tv.ui.theme.NuvioColors
 @Composable
 fun LayoutSelectionScreen(
     viewModel: LayoutSettingsViewModel = hiltViewModel(),
-    onContinue: () -> Unit
+    onContinue: (HomeLayout) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedLayout by remember { mutableStateOf(HomeLayout.CLASSIC) }
@@ -98,6 +99,13 @@ fun LayoutSelectionScreen(
                     onSelect = { selectedLayout = HomeLayout.GRID },
                     modifier = Modifier.weight(1f)
                 )
+
+                LayoutOptionCard(
+                    layout = HomeLayout.IMMERSIVE,
+                    isSelected = selectedLayout == HomeLayout.IMMERSIVE,
+                    onSelect = { selectedLayout = HomeLayout.IMMERSIVE },
+                    modifier = Modifier.weight(1f)
+                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -106,7 +114,7 @@ fun LayoutSelectionScreen(
             Button(
                 onClick = {
                     viewModel.onEvent(LayoutSettingsEvent.SelectLayout(selectedLayout))
-                    onContinue()
+                    onContinue(selectedLayout)
                 },
                 modifier = Modifier
                     .width(200.dp)
@@ -189,6 +197,9 @@ private fun LayoutOptionCard(
                     HomeLayout.GRID -> GridLayoutPreview(
                         modifier = Modifier.fillMaxSize()
                     )
+                    HomeLayout.IMMERSIVE -> ImmersiveLayoutPreview(
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
             }
 
@@ -206,6 +217,7 @@ private fun LayoutOptionCard(
                 text = when (layout) {
                     HomeLayout.CLASSIC -> "Scroll through categories horizontally"
                     HomeLayout.GRID -> "Browse everything in a vertical grid with a hero section"
+                    HomeLayout.IMMERSIVE -> "Immersive poster wall"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = NuvioColors.TextTertiary

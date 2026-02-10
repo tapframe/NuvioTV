@@ -49,6 +49,7 @@ import androidx.tv.material3.Text
 import com.nuvio.tv.domain.model.HomeLayout
 import com.nuvio.tv.ui.components.ClassicLayoutPreview
 import com.nuvio.tv.ui.components.GridLayoutPreview
+import com.nuvio.tv.ui.components.ImmersiveLayoutPreview
 import com.nuvio.tv.ui.theme.NuvioColors
 
 @Composable
@@ -90,13 +91,15 @@ fun LayoutSettingsContent(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
-    val sections = remember(uiState.availableCatalogs) {
+    val sections = remember(uiState.availableCatalogs, uiState.selectedLayout) {
         buildList {
-            add(LayoutSettingsSection.SidebarToggle)
-            add(LayoutSettingsSection.HeroSectionToggle)
             add(LayoutSettingsSection.LayoutCards)
-            if (uiState.availableCatalogs.isNotEmpty()) {
-                add(LayoutSettingsSection.HeroCatalog)
+            if (uiState.selectedLayout != HomeLayout.IMMERSIVE) {
+                add(LayoutSettingsSection.SidebarToggle)
+                add(LayoutSettingsSection.HeroSectionToggle)
+                if (uiState.availableCatalogs.isNotEmpty()) {
+                    add(LayoutSettingsSection.HeroCatalog)
+                }
             }
         }
     }
@@ -128,6 +131,15 @@ fun LayoutSettingsContent(
                             isSelected = uiState.selectedLayout == HomeLayout.GRID,
                             onClick = {
                                 viewModel.onEvent(LayoutSettingsEvent.SelectLayout(HomeLayout.GRID))
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        LayoutCard(
+                            layout = HomeLayout.IMMERSIVE,
+                            isSelected = uiState.selectedLayout == HomeLayout.IMMERSIVE,
+                            onClick = {
+                                viewModel.onEvent(LayoutSettingsEvent.SelectLayout(HomeLayout.IMMERSIVE))
                             },
                             modifier = Modifier.weight(1f)
                         )
@@ -238,6 +250,9 @@ private fun LayoutCard(
                     HomeLayout.GRID -> GridLayoutPreview(
                         modifier = Modifier.fillMaxSize()
                     )
+                    HomeLayout.IMMERSIVE -> ImmersiveLayoutPreview(
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
             }
 
@@ -269,6 +284,7 @@ private fun LayoutCard(
                 text = when (layout) {
                     HomeLayout.CLASSIC -> "Horizontal rows per category"
                     HomeLayout.GRID -> "Vertical grid with sticky headers"
+                    HomeLayout.IMMERSIVE -> "Immersive poster wall"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = NuvioColors.TextTertiary

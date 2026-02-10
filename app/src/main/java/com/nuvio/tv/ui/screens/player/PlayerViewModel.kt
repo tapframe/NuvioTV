@@ -521,7 +521,6 @@ class PlayerViewModel @Inject constructor(
 
                 val loadControl = loadControlBuilder.build()
 
-                
                 trackSelector = DefaultTrackSelector(context).apply {
                     setParameters(
                         buildUponParameters()

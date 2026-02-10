@@ -146,3 +146,79 @@ fun GridLayoutPreview(
         }
     }
 }
+
+/**
+ * Animated preview of the Immersive poster wall layout.
+ * Shows a dense grid of poster tiles scrolling horizontally in lockstep.
+ */
+@Composable
+fun ImmersiveLayoutPreview(
+    modifier: Modifier = Modifier,
+    accentColor: Color = NuvioColors.Primary
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "immersivePreview")
+    val scrollOffset by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(5000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "immersiveScroll"
+    )
+
+    val bgColor = Color.Black
+    val cardColor = accentColor.copy(alpha = 0.5f)
+    val cardColorDim = accentColor.copy(alpha = 0.25f)
+    val focusBorder = accentColor
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(bgColor)
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+
+            val rows = 3
+            val cardGap = w * 0.012f
+            val cardH = (h - cardGap * (rows + 1)) / rows
+            val cardW = cardH * 2f / 3f
+            val cols = (w / (cardW + cardGap)).toInt() + 2
+            val totalScrollX = scrollOffset * (cardW + cardGap) * 2f
+
+            val centerRow = rows / 2
+            val centerCol = cols / 2
+
+            for (row in 0 until rows) {
+                for (col in 0 until cols) {
+                    val cardX = cardGap + col * (cardW + cardGap) - totalScrollX
+                    val cardY = cardGap + row * (cardH + cardGap)
+
+                    if (cardX + cardW > -cardW && cardX < w + cardW) {
+                        val isFocused = row == centerRow && col == centerCol
+                        val color = if (isFocused) cardColor else cardColorDim
+
+                        drawRoundRect(
+                            color = color,
+                            topLeft = Offset(cardX, cardY),
+                            size = Size(cardW, cardH),
+                            cornerRadius = CornerRadius(h * 0.015f)
+                        )
+
+                        if (isFocused) {
+                            drawRoundRect(
+                                color = focusBorder,
+                                topLeft = Offset(cardX - 1.5f, cardY - 1.5f),
+                                size = Size(cardW + 3f, cardH + 3f),
+                                cornerRadius = CornerRadius(h * 0.015f),
+                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -4,6 +4,7 @@ import java.net.URLEncoder
 
 sealed class Screen(val route: String) {
     data object Home : Screen("home")
+    data object Immersive : Screen("immersive")
     data object Detail : Screen("detail/{itemId}/{itemType}?addonBaseUrl={addonBaseUrl}") {
         private fun encode(value: String): String =
             URLEncoder.encode(value, "UTF-8").replace("+", "%20")

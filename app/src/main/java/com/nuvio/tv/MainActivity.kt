@@ -54,6 +54,7 @@ import androidx.compose.material.icons.filled.Settings
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
 import com.nuvio.tv.data.local.ThemeDataStore
 import com.nuvio.tv.domain.model.AppTheme
+import com.nuvio.tv.domain.model.HomeLayout
 import com.nuvio.tv.ui.navigation.NuvioNavHost
 import com.nuvio.tv.ui.navigation.Screen
 import com.nuvio.tv.ui.theme.NuvioColors
@@ -89,11 +90,18 @@ class MainActivity : ComponentActivity() {
                     val layoutChosen = hasChosenLayout ?: return@Surface
 
                     val sidebarCollapsed by layoutPreferenceDataStore.sidebarCollapsedByDefault.collectAsState(initial = false)
+                    val selectedLayout by layoutPreferenceDataStore.selectedLayout.collectAsState(initial = HomeLayout.CLASSIC)
 
                     val updateViewModel: UpdateViewModel = hiltViewModel(this@MainActivity)
                     val updateState by updateViewModel.uiState.collectAsState()
 
-                    val startDestination = if (layoutChosen) Screen.Home.route else Screen.LayoutSelection.route
+                    val startDestination = if (!layoutChosen) {
+                        Screen.LayoutSelection.route
+                    } else if (selectedLayout == HomeLayout.IMMERSIVE) {
+                        Screen.Immersive.route
+                    } else {
+                        Screen.Home.route
+                    }
                     val navController = rememberNavController()
                     val navBackStackEntry by navController.currentBackStackEntryAsState()
                     val currentRoute = navBackStackEntry?.destination?.route
@@ -102,6 +110,7 @@ class MainActivity : ComponentActivity() {
                     val rootRoutes = remember {
                         setOf(
                             Screen.Home.route,
+                            Screen.Immersive.route,
                             Screen.Search.route,
                             Screen.Library.route,
                             Screen.Settings.route,
@@ -117,9 +126,11 @@ class MainActivity : ComponentActivity() {
                         drawerState.setValue(DrawerValue.Open)
                     }
 
-                    val drawerItems = remember {
+                    val homeRoute = if (selectedLayout == HomeLayout.IMMERSIVE) Screen.Immersive.route else Screen.Home.route
+
+                    val drawerItems = remember(homeRoute) {
                         listOf(
-                            Screen.Home.route to ("Home" to Icons.Filled.Home),
+                            homeRoute to ("Home" to Icons.Filled.Home),
                             Screen.Search.route to ("Search" to Icons.Filled.Search),
                             Screen.Library.route to ("Library" to Icons.Filled.Bookmark),
                             Screen.AddonManager.route to ("Addons" to Icons.Filled.Extension),
@@ -129,7 +140,7 @@ class MainActivity : ComponentActivity() {
 
                     val showSidebar = currentRoute in rootRoutes
 
-                    val closedDrawerWidth = if (sidebarCollapsed) 0.dp else 72.dp
+                    val closedDrawerWidth = if (sidebarCollapsed || currentRoute == Screen.Immersive.route) 0.dp else 72.dp
                     val openDrawerWidth = 260.dp
 
                     val focusManager = LocalFocusManager.current

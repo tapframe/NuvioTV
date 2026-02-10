@@ -24,6 +24,8 @@ import com.nuvio.tv.ui.screens.settings.PlaybackSettingsScreen
 import com.nuvio.tv.ui.screens.settings.SettingsScreen
 import com.nuvio.tv.ui.screens.settings.ThemeSettingsScreen
 import com.nuvio.tv.ui.screens.settings.TmdbSettingsScreen
+import com.nuvio.tv.domain.model.HomeLayout
+import com.nuvio.tv.ui.screens.immersive.ImmersiveScreen
 import com.nuvio.tv.ui.screens.stream.StreamScreen
 
 @Composable
@@ -41,8 +43,9 @@ fun NuvioNavHost(
     ) {
         composable(Screen.LayoutSelection.route) {
             LayoutSelectionScreen(
-                onContinue = {
-                    navController.navigate(Screen.Home.route) {
+                onContinue = { layout ->
+                    val route = if (layout == HomeLayout.IMMERSIVE) Screen.Immersive.route else Screen.Home.route
+                    navController.navigate(route) {
                         popUpTo(Screen.LayoutSelection.route) { inclusive = true }
                     }
                 }
@@ -56,6 +59,14 @@ fun NuvioNavHost(
                 },
                 onNavigateToCatalogSeeAll = { catalogId, addonId, type ->
                     navController.navigate(Screen.CatalogSeeAll.createRoute(catalogId, addonId, type))
+                }
+            )
+        }
+
+        composable(Screen.Immersive.route) {
+            ImmersiveScreen(
+                onNavigateToDetail = { itemId, itemType, addonBaseUrl ->
+                    navController.navigate(Screen.Detail.createRoute(itemId, itemType, addonBaseUrl))
                 }
             )
         }
