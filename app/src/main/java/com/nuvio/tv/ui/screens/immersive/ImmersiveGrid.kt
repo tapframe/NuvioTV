@@ -9,7 +9,6 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.size
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.zIndex
@@ -41,6 +40,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.nuvio.tv.domain.model.CatalogRow
 import com.nuvio.tv.domain.model.MetaPreview
+import com.nuvio.tv.domain.model.WatchProgress
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.floor
@@ -88,6 +88,8 @@ private fun ensureMinItems(items: List<MetaPreview>, minCount: Int): List<MetaPr
 fun ImmersiveGrid(
     catalogRows: List<CatalogRow>,
     metadataState: MetadataPopupState,
+    watchProgressMap: Map<String, WatchProgress> = emptyMap(),
+    nextUpIds: Set<String> = emptySet(),
     onFocusChanged: (MetaPreview?) -> Unit,
     onItemClick: (MetaPreview) -> Unit,
     modifier: Modifier = Modifier
@@ -110,8 +112,6 @@ fun ImmersiveGrid(
         val tileWidthPx = (tileHeightPx * ASPECT_RATIO).roundToInt()
         val cellWidthPx = tileWidthPx + 2 * marginPx
 
-        val cellHeight: Dp = with(density) { cellHeightPx.toDp() }
-        val cellWidth: Dp = with(density) { cellWidthPx.toDp() }
         val tileHeight: Dp = with(density) { tileHeightPx.toDp() }
         val tileWidth: Dp = with(density) { tileWidthPx.toDp() }
         val tileMargin: Dp = with(density) { marginPx.toDp() }
@@ -212,9 +212,9 @@ fun ImmersiveGrid(
                             focusedCol--
                             true
                         }
-                        Key.DirectionDown -> {
-                            val newRow = focusedRow + 1
-                            val wrappedNew = mod(newRow, totalCatalogRows)
+                        Key.DirectionDown, Key.DirectionUp -> {
+                            val delta = if (keyEvent.key == Key.DirectionDown) 1 else -1
+                            val wrappedNew = mod(focusedRow + delta, totalCatalogRows)
                             when {
                                 // Returning to the single frozen row: restore col, invert offset for all others
                                 prevFocusedWrappedRow >= 0 && wrappedNew == prevFocusedWrappedRow -> {
@@ -243,41 +243,7 @@ fun ImmersiveGrid(
                                     scope.launch { resetProgress.snapTo(0f) }
                                 }
                             }
-                            focusedRow++
-                            true
-                        }
-                        Key.DirectionUp -> {
-                            val newRow = focusedRow - 1
-                            val wrappedNew = mod(newRow, totalCatalogRows)
-                            when {
-                                // Returning to the single frozen row: restore col, invert offset for all others
-                                prevFocusedWrappedRow >= 0 && wrappedNew == prevFocusedWrappedRow -> {
-                                    focusedCol += prevFocusedColOffset
-                                    scope.launch { animatedCol.snapTo(focusedCol.toFloat()) }
-                                    prevFocusedColOffset = -prevFocusedColOffset
-                                    prevFocusedWrappedRow = -2
-                                    scope.launch { resetProgress.snapTo(0f) }
-                                }
-                                // Leaving while all-rows offset active: collapse onto the row we're leaving
-                                prevFocusedWrappedRow == -2 -> {
-                                    val leavingWrapped = mod(focusedRow, totalCatalogRows)
-                                    focusedCol += prevFocusedColOffset
-                                    scope.launch { animatedCol.snapTo(focusedCol.toFloat()) }
-                                    prevFocusedColOffset = -prevFocusedColOffset
-                                    prevFocusedWrappedRow = leavingWrapped
-                                }
-                                // Leaving during dwell: freeze current row, snap to col 0 for new row
-                                resetProgress.value > 0.01f -> {
-                                    prevFocusedWrappedRow = mod(focusedRow, totalCatalogRows)
-                                    val itemCount = processedRows[wrappedNew].items.size
-                                    val target = if (itemCount > 0) nearestCol0(focusedCol, itemCount) else focusedCol
-                                    prevFocusedColOffset = focusedCol - target
-                                    scope.launch { animatedCol.snapTo(target.toFloat()) }
-                                    focusedCol = target
-                                    scope.launch { resetProgress.snapTo(0f) }
-                                }
-                            }
-                            focusedRow--
+                            focusedRow += delta
                             true
                         }
                         Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.ButtonA -> {
@@ -359,6 +325,8 @@ fun ImmersiveGrid(
                             isFocused = isFocused,
                             tileWidth = tileWidth,
                             tileHeight = tileHeight,
+                            watchProgress = watchProgressMap[item.id],
+                            isNextUp = item.id in nextUpIds,
                             tileMargin = if (isFocused) tileMargin * 2 else tileMargin,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -377,8 +345,12 @@ fun ImmersiveGrid(
 
             // Resolve the focused catalog info for the overlay
             val focusedWrappedRow = mod(focusedRow, totalCatalogRows)
-            val focusedRow_ = processedRows[focusedWrappedRow]
-            val catalogLabel = "${focusedRow_.catalogName} - ${focusedRow_.type.toApiString().replaceFirstChar { it.uppercase() }}"
+            val focusedCatalogRow = processedRows[focusedWrappedRow]
+            val catalogLabel = if (focusedCatalogRow.addonName.isBlank()) {
+                focusedCatalogRow.catalogName
+            } else {
+                "${focusedCatalogRow.catalogName} - ${focusedCatalogRow.type.toApiString().replaceFirstChar { it.uppercase() }}"
+            }
 
             Box(
                 modifier = Modifier

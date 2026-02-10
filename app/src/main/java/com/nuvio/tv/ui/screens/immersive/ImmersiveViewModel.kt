@@ -6,12 +6,16 @@ import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.domain.model.Addon
 import com.nuvio.tv.domain.model.CatalogDescriptor
 import com.nuvio.tv.domain.model.CatalogRow
+import com.nuvio.tv.domain.model.ContentType
 import com.nuvio.tv.domain.model.MetaPreview
+import com.nuvio.tv.domain.model.PosterShape
+import com.nuvio.tv.domain.model.Video
+import com.nuvio.tv.domain.model.WatchProgress
 import com.nuvio.tv.domain.repository.AddonRepository
 import com.nuvio.tv.domain.repository.CatalogRepository
 import com.nuvio.tv.domain.repository.MetaRepository
+import com.nuvio.tv.domain.repository.WatchProgressRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,7 +34,8 @@ import javax.inject.Inject
 class ImmersiveViewModel @Inject constructor(
     private val addonRepository: AddonRepository,
     private val catalogRepository: CatalogRepository,
-    private val metaRepository: MetaRepository
+    private val metaRepository: MetaRepository,
+    private val watchProgressRepository: WatchProgressRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ImmersiveUiState())
@@ -44,11 +49,109 @@ class ImmersiveViewModel @Inject constructor(
     private var addonsCache: List<Addon> = emptyList()
     private val catalogLoadSemaphore = Semaphore(6)
 
+    private var continueWatchingPreviews: List<MetaPreview> = emptyList()
+    private var inProgressMap: Map<String, WatchProgress> = emptyMap()
+    private var nextUpIdSet: Set<String> = emptySet()
+
     private var metadataTimerJob: Job? = null
     private var currentFocusedItem: MetaPreview? = null
 
     init {
+        loadContinueWatching()
         observeInstalledAddons()
+    }
+
+    private fun loadContinueWatching() {
+        viewModelScope.launch {
+            watchProgressRepository.allProgress.collectLatest { items ->
+                buildContinueWatchingData(items)
+                updateCatalogRows()
+            }
+        }
+    }
+
+    private suspend fun buildContinueWatchingData(allProgress: List<WatchProgress>) {
+        val inProgress = allProgress
+            .filter { it.isInProgress() }
+            .sortedByDescending { it.lastWatched }
+
+        inProgressMap = inProgress.associateBy { it.contentId }
+        val inProgressIds = inProgressMap.keys
+
+        val latestCompletedBySeries = allProgress
+            .filter { progress ->
+                isSeriesType(progress.contentType) &&
+                    progress.season != null && progress.episode != null &&
+                    progress.season != 0 && progress.isCompleted()
+            }
+            .groupBy { it.contentId }
+            .mapNotNull { (_, items) -> items.maxByOrNull { it.lastWatched } }
+            .filter { it.contentId !in inProgressIds }
+
+        val nextUpResults = mutableListOf<Pair<Long, MetaPreview>>()
+        val nextUpIds = mutableSetOf<String>()
+
+        latestCompletedBySeries.forEach { progress ->
+            val result = metaRepository.getMetaFromAllAddons(
+                type = progress.contentType,
+                id = progress.contentId
+            ).first { it !is NetworkResult.Loading }
+
+            val meta = (result as? NetworkResult.Success)?.data ?: return@forEach
+            val episodes = meta.videos
+                .filter { it.season != null && it.episode != null && it.season != 0 }
+                .sortedWith(compareBy<Video> { it.season }.thenBy { it.episode })
+
+            val currentIndex = episodes.indexOfFirst {
+                it.season == progress.season && it.episode == progress.episode
+            }
+            if (currentIndex == -1 || currentIndex + 1 >= episodes.size) return@forEach
+
+            nextUpIds.add(meta.id)
+            nextUpResults.add(
+                progress.lastWatched to MetaPreview(
+                    id = meta.id,
+                    type = meta.type,
+                    name = meta.name,
+                    poster = meta.poster,
+                    posterShape = meta.posterShape,
+                    background = meta.background,
+                    logo = meta.logo,
+                    description = meta.description,
+                    releaseInfo = meta.releaseInfo,
+                    imdbRating = meta.imdbRating,
+                    genres = meta.genres
+                )
+            )
+        }
+
+        nextUpIdSet = nextUpIds
+
+        val combined = mutableListOf<Pair<Long, MetaPreview>>()
+        inProgress.forEach { wp ->
+            combined.add(wp.lastWatched to wp.toMetaPreview())
+        }
+        combined.addAll(nextUpResults)
+
+        continueWatchingPreviews = combined.sortedByDescending { it.first }.map { it.second }
+    }
+
+    private fun WatchProgress.toMetaPreview() = MetaPreview(
+        id = contentId,
+        type = ContentType.fromString(contentType),
+        name = name,
+        poster = poster,
+        posterShape = PosterShape.POSTER,
+        background = backdrop,
+        logo = logo,
+        description = null,
+        releaseInfo = null,
+        imdbRating = null,
+        genres = emptyList()
+    )
+
+    private fun isSeriesType(type: String?): Boolean {
+        return type == "series" || type == "tv"
     }
 
     private fun observeInstalledAddons() {
@@ -136,10 +239,34 @@ class ImmersiveViewModel @Inject constructor(
     }
 
     private fun updateCatalogRows() {
-        val rows = catalogOrder.mapNotNull { key ->
+        val catalogRows = catalogOrder.mapNotNull { key ->
             catalogsMap[key]?.takeIf { it.items.isNotEmpty() }
         }
-        _uiState.update { it.copy(catalogRows = rows, isLoading = false) }
+        val rows = buildList {
+            if (continueWatchingPreviews.isNotEmpty()) {
+                add(
+                    CatalogRow(
+                        addonId = "continue_watching",
+                        addonName = "",
+                        addonBaseUrl = "",
+                        catalogId = "continue_watching",
+                        catalogName = "Continue Watching",
+                        type = ContentType.UNKNOWN,
+                        items = continueWatchingPreviews,
+                        hasMore = false
+                    )
+                )
+            }
+            addAll(catalogRows)
+        }
+        _uiState.update {
+            it.copy(
+                catalogRows = rows,
+                isLoading = false,
+                watchProgressMap = inProgressMap,
+                nextUpIds = nextUpIdSet
+            )
+        }
     }
 
     fun onFocusChanged(item: MetaPreview?) {

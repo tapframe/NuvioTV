@@ -61,6 +61,8 @@ fun ImmersiveScreen(
                 ImmersiveGrid(
                     catalogRows = uiState.catalogRows,
                     metadataState = metadataState,
+                    watchProgressMap = uiState.watchProgressMap,
+                    nextUpIds = uiState.nextUpIds,
                     onFocusChanged = { item -> viewModel.onFocusChanged(item) },
                     onItemClick = { item ->
                         val (id, type, addonUrl) = viewModel.onItemClicked(item)

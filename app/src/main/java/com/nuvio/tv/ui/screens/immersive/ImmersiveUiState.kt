@@ -2,13 +2,15 @@ package com.nuvio.tv.ui.screens.immersive
 
 import androidx.compose.runtime.Immutable
 import com.nuvio.tv.domain.model.CatalogRow
-import com.nuvio.tv.domain.model.Meta
+import com.nuvio.tv.domain.model.WatchProgress
 
 @Immutable
 data class ImmersiveUiState(
     val catalogRows: List<CatalogRow> = emptyList(),
     val isLoading: Boolean = true,
-    val error: String? = null
+    val error: String? = null,
+    val watchProgressMap: Map<String, WatchProgress> = emptyMap(),
+    val nextUpIds: Set<String> = emptySet()
 )
 
 @Immutable
