@@ -52,7 +52,7 @@ fun ImmersiveMetadataOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(OverlayBackground.copy(alpha = 0.92f))
+                .background(OverlayBackground)
                 .padding(16.dp),
             contentAlignment = Alignment.CenterStart
         ) {
