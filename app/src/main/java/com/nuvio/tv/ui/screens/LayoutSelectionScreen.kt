@@ -217,7 +217,7 @@ private fun LayoutOptionCard(
                 text = when (layout) {
                     HomeLayout.CLASSIC -> "Scroll through categories horizontally"
                     HomeLayout.GRID -> "Browse everything in a vertical grid with a hero section"
-                    HomeLayout.IMMERSIVE -> "Immersive poster wall"
+                    HomeLayout.IMMERSIVE -> "Infinite poster wall"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = NuvioColors.TextTertiary

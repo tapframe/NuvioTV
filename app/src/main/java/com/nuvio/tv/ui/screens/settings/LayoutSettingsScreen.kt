@@ -284,7 +284,7 @@ private fun LayoutCard(
                 text = when (layout) {
                     HomeLayout.CLASSIC -> "Horizontal rows per category"
                     HomeLayout.GRID -> "Vertical grid with sticky headers"
-                    HomeLayout.IMMERSIVE -> "Immersive poster wall"
+                    HomeLayout.IMMERSIVE -> "Infinite poster wall"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = NuvioColors.TextTertiary

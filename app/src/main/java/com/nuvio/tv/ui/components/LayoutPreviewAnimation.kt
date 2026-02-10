@@ -148,7 +148,7 @@ fun GridLayoutPreview(
 }
 
 /**
- * Animated preview of the Immersive poster wall layout.
+ * Animated preview of the Infinite poster wall layout.
  * Shows a dense grid of poster tiles scrolling horizontally in lockstep.
  */
 @Composable
