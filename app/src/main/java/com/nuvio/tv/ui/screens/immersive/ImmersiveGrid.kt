@@ -86,6 +86,11 @@ private const val ASPECT_RATIO = 2f / 3f // poster 2:3
 private const val SPRING_STIFFNESS = 200f
 private const val RECENTER_DELAY_MS = 5000L
 private const val RECENTER_ANIM_MS = 800
+private const val SCREENSAVER_DELAY_MS = 60_000L
+private const val DRIFT_SPEED_ABOVE = 0.03f    // tiles/sec, rightward
+private const val DRIFT_SPEED_BELOW_1 = -0.06f  // tiles/sec, leftward
+private const val DRIFT_SPEED_BELOW_2 = 0.09f   // tiles/sec, rightward (slowest)
+private const val DRIFT_EASE_IN_SEC = 9f
 
 private fun mod(a: Int, b: Int): Int {
     if (b <= 0) return 0
@@ -196,6 +201,10 @@ fun ImmersiveGrid(
         // True once the first recenter has completed. Controls offset-based vertical nav.
         var recentered by rememberSaveable { mutableStateOf(false) }
 
+        // Screensaver drift state (transient — does not survive navigation)
+        val driftOffsets = remember { mutableStateMapOf<Int, Float>() }
+        var inputGeneration by remember { mutableIntStateOf(0) }
+
         LaunchedEffect(focusedRow, focusedCol) {
             if (!recentered) {
                 recenterProgress.snapTo(0f)
@@ -242,6 +251,35 @@ fun ImmersiveGrid(
             onFocusChanged(row.items.getOrNull(wrappedCol))
         }
 
+        // Screensaver drift: after 10s idle, 3 nearby rows drift at different speeds
+        LaunchedEffect(focusedRow, focusedCol, inputGeneration) {
+            driftOffsets.clear()
+            delay(SCREENSAVER_DELAY_MS)
+
+            val focusedWrapped = mod(focusedRow, totalCatalogRows)
+            val driftRows = listOf(
+                mod(focusedRow - 1, totalCatalogRows) to DRIFT_SPEED_ABOVE,
+                mod(focusedRow + 1, totalCatalogRows) to DRIFT_SPEED_BELOW_1,
+                mod(focusedRow + 2, totalCatalogRows) to DRIFT_SPEED_BELOW_2,
+            ).filter { it.first != focusedWrapped }
+                .distinctBy { it.first }
+
+            var prevTime = System.nanoTime()
+            var elapsed = 0f
+            while (true) {
+                delay(16) // ~60fps
+                val now = System.nanoTime()
+                val dt = (now - prevTime) / 1_000_000_000f
+                prevTime = now
+                elapsed += dt
+                val t = (elapsed / DRIFT_EASE_IN_SEC).coerceAtMost(1f)
+                val ease = t * t // quadratic ease-in
+                for ((row, speed) in driftRows) {
+                    driftOffsets[row] = (driftOffsets[row] ?: 0f) + speed * ease * dt
+                }
+            }
+        }
+
         val focusRequester = remember { FocusRequester() }
         val lifecycleOwner = LocalLifecycleOwner.current
         LaunchedEffect(lifecycleOwner) {
@@ -256,6 +294,15 @@ fun ImmersiveGrid(
                 .focusRequester(focusRequester)
                 .onPreviewKeyEvent { keyEvent ->
                     if (keyEvent.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+
+                    // Stop screensaver drift — merge drifted positions into rowOffsets
+                    inputGeneration++
+                    if (driftOffsets.isNotEmpty()) {
+                        for ((row, drift) in driftOffsets) {
+                            rowOffsets[row] = (rowOffsets[row] ?: 0) + drift.roundToInt()
+                        }
+                        driftOffsets.clear()
+                    }
 
                     when (keyEvent.key) {
                         Key.DirectionRight -> {
@@ -335,7 +382,8 @@ fun ImmersiveGrid(
                     currentAnimCol
                 } else {
                     val rowOffset = (rowOffsets[wrappedRow] ?: 0).toFloat()
-                    val baseCol = currentAnimCol + rowOffset
+                    val drift = driftOffsets[wrappedRow] ?: 0f
+                    val baseCol = currentAnimCol + rowOffset + drift
                     if (recenterProg <= 0f) {
                         baseCol
                     } else {
