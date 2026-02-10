@@ -31,7 +31,7 @@ fun ImmersiveScreen(
             .background(Color.Black)
     ) {
         when {
-            uiState.isLoading -> {
+            uiState.isLoading && uiState.catalogRows.isEmpty() -> {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center

@@ -207,8 +207,8 @@ class ImmersiveViewModel @Inject constructor(
                 }
         }
 
-        // Wait for all catalogs to finish before showing the grid
-        jobs.forEach { it.join() }
+        // Wait for at least the first catalog to arrive, then mark not loading
+        jobs.firstOrNull()?.join()
         _uiState.update { it.copy(isLoading = false) }
     }
 
@@ -262,6 +262,7 @@ class ImmersiveViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 catalogRows = rows,
+                isLoading = false,
                 watchProgressMap = inProgressMap,
                 nextUpIds = nextUpIdSet
             )
