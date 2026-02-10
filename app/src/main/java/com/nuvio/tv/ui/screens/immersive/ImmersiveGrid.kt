@@ -16,6 +16,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -46,12 +48,42 @@ import kotlinx.coroutines.launch
 import kotlin.math.floor
 import kotlin.math.roundToInt
 
+// ── Infinite-scroll grid with per-row recenter ──────────────────────────────
+//
+// The grid is an infinite carousel in both axes.  All rows share a single
+// animated column value (animatedCol) so that left/right input scrolls every
+// row by one tile in lockstep.  Each row may have a different number of unique
+// items; items repeat via mod-wrapping to fill the infinite strip.
+//
+// Recenter system
+// ───────────────
+// After RECENTER_DELAY_MS of idle, every *non-focused* row smoothly slides to
+// its nearest "col-0" (the position where item 0 is centred on screen).
+// The focused row keeps its position — the user's scroll offset is preserved.
+//
+// Because rows have different item counts, their col-0 positions differ.
+// A per-row offset map (rowOffsets) stores the delta between animatedCol and
+// each non-focused row's actual column.  When the user scrolls, animatedCol
+// changes and every offset stays constant, so all rows move together.
+//
+// Vertical navigation after recenter
+// ───────────────────────────────────
+// When the user presses Up/Down after a recenter has happened:
+//   1. The old focused row's offset is recorded as 0 (its true position).
+//   2. animatedCol is shifted to match the target row's visual column.
+//   3. Every stored offset is compensated by the same shift so that no row
+//      moves on screen.
+// This guarantees zero visual jumps for any row regardless of item counts.
+//
+// The next recenter (after another idle timeout) will smoothly bring all
+// non-focused rows back to their col-0.
+
 private const val VISIBLE_ROWS = 3.25f
 private const val TILE_MARGIN_DP = 4f
 private const val ASPECT_RATIO = 2f / 3f // poster 2:3
 private const val SPRING_STIFFNESS = 200f
-private const val DWELL_RESET_DELAY_MS = 5000L
-private const val DWELL_RESET_ANIM_MS = 800
+private const val RECENTER_DELAY_MS = 5000L
+private const val RECENTER_ANIM_MS = 800
 
 private fun mod(a: Int, b: Int): Int {
     if (b <= 0) return 0
@@ -142,21 +174,32 @@ fun ImmersiveGrid(
         val animatedRow = remember { Animatable(initialRow.toFloat()) }
         val scope = rememberCoroutineScope()
 
-        // Dwell reset: after 10s without movement, non-focused rows slide to show col 0
-        val resetProgress = remember { Animatable(0f) }
+        // Recenter animation progress: 0 = idle, animates to 1 during recenter.
+        val recenterProgress = remember { Animatable(0f) }
 
-        // Track per-row column offset for per-row persistence after dwell reset.
-        // prevFocusedWrappedRow: -1 = no override, >= 0 = that row gets offset,
-        // -2 = ALL non-focused rows get offset (used after returning to frozen row)
-        var prevFocusedWrappedRow by remember { mutableIntStateOf(-1) }
-        var prevFocusedColOffset by remember { mutableIntStateOf(0) }
+        // Per-row column offsets (see file-level comment for full explanation).
+        val rowOffsets = remember { mutableStateMapOf<Int, Int>() }
+
+        // True once the first recenter has completed. Controls offset-based vertical nav.
+        var recentered by remember { mutableStateOf(false) }
 
         LaunchedEffect(focusedRow, focusedCol) {
-            resetProgress.snapTo(0f)
-            delay(DWELL_RESET_DELAY_MS)
-            resetProgress.animateTo(1f, tween(DWELL_RESET_ANIM_MS))
-            prevFocusedWrappedRow = -1
-            prevFocusedColOffset = 0
+            if (!recentered) {
+                recenterProgress.snapTo(0f)
+            }
+            delay(RECENTER_DELAY_MS)
+            recenterProgress.animateTo(1f, tween(RECENTER_ANIM_MS))
+            // Recenter complete: update offsets to col-0 positions for all non-focused rows
+            val focusedWrapped = mod(focusedRow, totalCatalogRows)
+            for (i in processedRows.indices) {
+                if (i != focusedWrapped && processedRows[i].items.isNotEmpty()) {
+                    val oldOffset = rowOffsets[i] ?: 0
+                    val effectiveCol = focusedCol + oldOffset
+                    rowOffsets[i] = nearestCol0(effectiveCol, processedRows[i].items.size) - focusedCol
+                }
+            }
+            recenterProgress.snapTo(0f)
+            recentered = true
         }
 
         LaunchedEffect(focusedCol) {
@@ -203,45 +246,48 @@ fun ImmersiveGrid(
 
                     when (keyEvent.key) {
                         Key.DirectionRight -> {
-                            scope.launch { resetProgress.snapTo(0f) }
+                            scope.launch { recenterProgress.snapTo(0f) }
                             focusedCol++
                             true
                         }
                         Key.DirectionLeft -> {
-                            scope.launch { resetProgress.snapTo(0f) }
+                            scope.launch { recenterProgress.snapTo(0f) }
                             focusedCol--
                             true
                         }
                         Key.DirectionDown, Key.DirectionUp -> {
                             val delta = if (keyEvent.key == Key.DirectionDown) 1 else -1
                             val wrappedNew = mod(focusedRow + delta, totalCatalogRows)
-                            when {
-                                // Returning to the single frozen row: restore col, invert offset for all others
-                                prevFocusedWrappedRow >= 0 && wrappedNew == prevFocusedWrappedRow -> {
-                                    focusedCol += prevFocusedColOffset
+                            if (recentered) {
+                                // If recenter animation is in progress, complete it: finalize offsets to col-0
+                                if (recenterProgress.value > 0.01f) {
+                                    val fw = mod(focusedRow, totalCatalogRows)
+                                    for (i in processedRows.indices) {
+                                        if (i != fw && processedRows[i].items.isNotEmpty()) {
+                                            val old = rowOffsets[i] ?: 0
+                                            val eff = focusedCol + old
+                                            rowOffsets[i] = nearestCol0(eff, processedRows[i].items.size) - focusedCol
+                                        }
+                                    }
+                                }
+                                scope.launch { recenterProgress.snapTo(0f) }
+
+                                // Record old focused row's effective offset (0, since it was focused)
+                                val focusedWrapped = mod(focusedRow, totalCatalogRows)
+                                rowOffsets[focusedWrapped] = 0
+
+                                // Shift animatedCol to match the target row's visual position
+                                val targetOffset = rowOffsets[wrappedNew] ?: 0
+                                if (targetOffset != 0) {
+                                    focusedCol += targetOffset
                                     scope.launch { animatedCol.snapTo(focusedCol.toFloat()) }
-                                    prevFocusedColOffset = -prevFocusedColOffset
-                                    prevFocusedWrappedRow = -2
-                                    scope.launch { resetProgress.snapTo(0f) }
+                                    // Compensate all offsets so every row keeps its visual position
+                                    for (key in rowOffsets.keys.toList()) {
+                                        rowOffsets[key] = rowOffsets[key]!! - targetOffset
+                                    }
                                 }
-                                // Leaving while all-rows offset active: collapse onto the row we're leaving
-                                prevFocusedWrappedRow == -2 -> {
-                                    val leavingWrapped = mod(focusedRow, totalCatalogRows)
-                                    focusedCol += prevFocusedColOffset
-                                    scope.launch { animatedCol.snapTo(focusedCol.toFloat()) }
-                                    prevFocusedColOffset = -prevFocusedColOffset
-                                    prevFocusedWrappedRow = leavingWrapped
-                                }
-                                // Leaving during dwell: freeze current row, snap to col 0 for new row
-                                resetProgress.value > 0.01f -> {
-                                    prevFocusedWrappedRow = mod(focusedRow, totalCatalogRows)
-                                    val itemCount = processedRows[wrappedNew].items.size
-                                    val target = if (itemCount > 0) nearestCol0(focusedCol, itemCount) else focusedCol
-                                    prevFocusedColOffset = focusedCol - target
-                                    scope.launch { animatedCol.snapTo(target.toFloat()) }
-                                    focusedCol = target
-                                    scope.launch { resetProgress.snapTo(0f) }
-                                }
+                                // Target row is now focused — its offset is not used during rendering
+                                rowOffsets.remove(wrappedNew)
                             }
                             focusedRow += delta
                             true
@@ -260,7 +306,7 @@ fun ImmersiveGrid(
         ) {
             val currentAnimCol = animatedCol.value
             val currentAnimRow = animatedRow.value
-            val resetProg = resetProgress.value
+            val recenterProg = recenterProgress.value
 
             for (screenRow in -1..visibleRows) {
                 val gridRow = floor(currentAnimRow).toInt() + (screenRow - centerRow)
@@ -270,21 +316,14 @@ fun ImmersiveGrid(
 
                 val isFocusedRow = gridRow == focusedRow
 
-                // Per-row effective column with override support
+                // Per-row effective column using stored offsets.
+                // During recenter animation (recenterProg > 0), rows interpolate toward their col-0.
                 val effectiveAnimCol = if (isFocusedRow) {
                     currentAnimCol
                 } else {
-                    val hasOffset = when {
-                        prevFocusedWrappedRow >= 0 && wrappedRow == prevFocusedWrappedRow -> true
-                        prevFocusedWrappedRow == -2 -> true
-                        else -> false
-                    }
-                    val baseCol = if (hasOffset) {
-                        currentAnimCol + prevFocusedColOffset.toFloat()
-                    } else {
-                        currentAnimCol
-                    }
-                    if (resetProg <= 0f) {
+                    val rowOffset = (rowOffsets[wrappedRow] ?: 0).toFloat()
+                    val baseCol = currentAnimCol + rowOffset
+                    if (recenterProg <= 0f) {
                         baseCol
                     } else {
                         val baseWrapped = mod(floor(baseCol).toInt(), row.items.size)
@@ -292,7 +331,7 @@ fun ImmersiveGrid(
                             baseCol
                         } else {
                             val target = nearestCol0(floor(baseCol).toInt(), row.items.size).toFloat()
-                            baseCol + (target - baseCol) * resetProg
+                            baseCol + (target - baseCol) * recenterProg
                         }
                     }
                 }
