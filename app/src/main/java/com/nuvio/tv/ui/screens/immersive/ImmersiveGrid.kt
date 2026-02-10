@@ -20,7 +20,9 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -106,6 +108,17 @@ private fun Modifier.pixelSize(widthPx: Int, heightPx: Int): Modifier =
         }
     }
 
+private val rowOffsetsSaver = listSaver<SnapshotStateMap<Int, Int>, Int>(
+    save = { map ->
+        buildList { map.forEach { (k, v) -> add(k); add(v) } }
+    },
+    restore = { list ->
+        SnapshotStateMap<Int, Int>().also { map ->
+            for (i in list.indices step 2) map[list[i]] = list[i + 1]
+        }
+    }
+)
+
 private fun ensureMinItems(items: List<MetaPreview>, minCount: Int): List<MetaPreview> {
     if (items.isEmpty()) return items
     if (items.size >= minCount) return items
@@ -178,10 +191,10 @@ fun ImmersiveGrid(
         val recenterProgress = remember { Animatable(0f) }
 
         // Per-row column offsets (see file-level comment for full explanation).
-        val rowOffsets = remember { mutableStateMapOf<Int, Int>() }
+        val rowOffsets = rememberSaveable(saver = rowOffsetsSaver) { mutableStateMapOf<Int, Int>() }
 
         // True once the first recenter has completed. Controls offset-based vertical nav.
-        var recentered by remember { mutableStateOf(false) }
+        var recentered by rememberSaveable { mutableStateOf(false) }
 
         LaunchedEffect(focusedRow, focusedCol) {
             if (!recentered) {
