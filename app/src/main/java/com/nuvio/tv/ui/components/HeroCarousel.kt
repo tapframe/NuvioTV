@@ -26,6 +26,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -57,6 +59,7 @@ private const val AUTO_ADVANCE_INTERVAL_MS = 5000L
 fun HeroCarousel(
     items: List<MetaPreview>,
     onItemClick: (MetaPreview) -> Unit,
+    focusRequester: FocusRequester? = null,
     modifier: Modifier = Modifier
 ) {
     if (items.isEmpty()) return
@@ -79,6 +82,7 @@ fun HeroCarousel(
         modifier = modifier
             .fillMaxWidth()
             .height(400.dp)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .focusable()
             .onFocusChanged { isFocused = it.hasFocus || it.isFocused }
             .onPreviewKeyEvent { event ->

@@ -25,8 +25,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -116,6 +119,37 @@ fun GridHomeContent(
             }
         }
     }
+    val shouldRequestInitialFocus = remember(gridFocusState.verticalScrollIndex, gridFocusState.verticalScrollOffset) {
+        gridFocusState.verticalScrollIndex == 0 && gridFocusState.verticalScrollOffset == 0
+    }
+    val heroFocusRequester = remember { FocusRequester() }
+    val firstGridItemFocusRequester = remember { FocusRequester() }
+    val hasContinueWatching = uiState.continueWatchingItems.isNotEmpty()
+    val hasStandaloneFocusableGridItem = remember(uiState.gridItems) {
+        uiState.gridItems.any { it is GridItem.Content || it is GridItem.SeeAll }
+    }
+
+    LaunchedEffect(
+        shouldRequestInitialFocus,
+        hasHero,
+        hasContinueWatching,
+        hasStandaloneFocusableGridItem,
+        uiState.gridItems.size
+    ) {
+        if (!shouldRequestInitialFocus) return@LaunchedEffect
+        if (hasContinueWatching && !hasHero) return@LaunchedEffect
+        val targetRequester = when {
+            hasHero -> heroFocusRequester
+            hasStandaloneFocusableGridItem -> firstGridItemFocusRequester
+            else -> null
+        } ?: return@LaunchedEffect
+
+        repeat(2) { withFrameNanos { } }
+        try {
+            targetRequester.requestFocus()
+        } catch (_: IllegalStateException) {
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         TvLazyVerticalGrid(
@@ -132,6 +166,7 @@ fun GridHomeContent(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             var continueWatchingInserted = false
+            var firstGridFocusableAssigned = false
 
             uiState.gridItems.forEachIndexed { index, gridItem ->
                 when (gridItem) {
@@ -143,6 +178,7 @@ fun GridHomeContent(
                         ) {
                             HeroCarousel(
                                 items = gridItem.items,
+                                focusRequester = if (shouldRequestInitialFocus) heroFocusRequester else null,
                                 onItemClick = { item ->
                                     onNavigateToDetail(
                                         item.id,
@@ -165,6 +201,7 @@ fun GridHomeContent(
                             ) {
                                 GridContinueWatchingSection(
                                     items = uiState.continueWatchingItems,
+                                    focusedItemIndex = if (shouldRequestInitialFocus && !hasHero) 0 else -1,
                                     onItemClick = { item ->
                                         onNavigateToDetail(
                                             when (item) {
@@ -201,6 +238,17 @@ fun GridHomeContent(
                     }
 
                     is GridItem.Content -> {
+                        val focusRequester = if (
+                            shouldRequestInitialFocus &&
+                            !hasHero &&
+                            !hasContinueWatching &&
+                            !firstGridFocusableAssigned
+                        ) {
+                            firstGridFocusableAssigned = true
+                            firstGridItemFocusRequester
+                        } else {
+                            null
+                        }
                         item(
                             key = "content_${index}_${gridItem.catalogId}_${gridItem.item.id}",
                             span = { TvGridItemSpan(1) },
@@ -208,6 +256,7 @@ fun GridHomeContent(
                         ) {
                             GridContentCard(
                                 item = gridItem.item,
+                                focusRequester = focusRequester,
                                 posterCardStyle = posterCardStyle,
                                 onClick = {
                                     onNavigateToDetail(
@@ -221,6 +270,17 @@ fun GridHomeContent(
                     }
 
                     is GridItem.SeeAll -> {
+                        val focusRequester = if (
+                            shouldRequestInitialFocus &&
+                            !hasHero &&
+                            !hasContinueWatching &&
+                            !firstGridFocusableAssigned
+                        ) {
+                            firstGridFocusableAssigned = true
+                            firstGridItemFocusRequester
+                        } else {
+                            null
+                        }
                         item(
                             key = "see_all_${gridItem.catalogId}_${gridItem.addonId}_${gridItem.type}",
                             span = { TvGridItemSpan(1) },
@@ -228,6 +288,7 @@ fun GridHomeContent(
                         ) {
                             SeeAllGridCard(
                                 posterCardStyle = posterCardStyle,
+                                focusRequester = focusRequester,
                                 onClick = {
                                     onNavigateToCatalogSeeAll(
                                         gridItem.catalogId,
@@ -314,6 +375,7 @@ private fun StickyCategoryHeader(
 private fun SeeAllGridCard(
     onClick: () -> Unit,
     posterCardStyle: PosterCardStyle,
+    focusRequester: FocusRequester? = null,
     modifier: Modifier = Modifier
 ) {
     val seeAllCardShape = RoundedCornerShape(posterCardStyle.cornerRadius)
@@ -321,7 +383,8 @@ private fun SeeAllGridCard(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .aspectRatio(posterCardStyle.aspectRatio),
+            .aspectRatio(posterCardStyle.aspectRatio)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
         shape = CardDefaults.shape(
             shape = seeAllCardShape
         ),

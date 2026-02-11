@@ -14,7 +14,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import com.nuvio.tv.ui.components.CatalogRowSection
@@ -54,6 +56,15 @@ fun ClassicHomeContent(
     val catalogRowScrollStates = remember { mutableMapOf<String, Int>() }
     val perCatalogFocusedItem = remember { mutableMapOf<String, Int>() }
     var restoringFocus by remember { mutableStateOf(focusState.hasSavedFocus) }
+    val heroFocusRequester = remember { FocusRequester() }
+    val shouldRequestInitialFocus = remember(focusState) {
+        !focusState.hasSavedFocus &&
+            focusState.verticalScrollIndex == 0 &&
+            focusState.verticalScrollOffset == 0
+    }
+    val visibleCatalogRows = remember(uiState.catalogRows) {
+        uiState.catalogRows.filter { it.items.isNotEmpty() }
+    }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -70,6 +81,15 @@ fun ClassicHomeContent(
 
     val heroVisible = uiState.heroSectionEnabled && uiState.heroItems.isNotEmpty()
 
+    LaunchedEffect(shouldRequestInitialFocus, heroVisible, uiState.heroItems.size) {
+        if (!shouldRequestInitialFocus || !heroVisible) return@LaunchedEffect
+        repeat(2) { withFrameNanos { } }
+        try {
+            heroFocusRequester.requestFocus()
+        } catch (_: IllegalStateException) {
+        }
+    }
+
     LazyColumn(
         state = columnListState,
         modifier = Modifier.fillMaxSize(),
@@ -80,6 +100,7 @@ fun ClassicHomeContent(
             item(key = "hero_carousel", contentType = "hero") {
                 HeroCarousel(
                     items = uiState.heroItems,
+                    focusRequester = if (shouldRequestInitialFocus) heroFocusRequester else null,
                     onItemClick = { item ->
                         onNavigateToDetail(
                             item.id,
@@ -115,7 +136,11 @@ fun ClassicHomeContent(
                         }
                         onRemoveContinueWatching(contentId)
                     },
-                    focusedItemIndex = if (focusState.focusedRowIndex == -1) focusState.focusedItemIndex else -1,
+                    focusedItemIndex = when {
+                        focusState.hasSavedFocus && focusState.focusedRowIndex == -1 -> focusState.focusedItemIndex
+                        shouldRequestInitialFocus && !heroVisible -> 0
+                        else -> -1
+                    },
                     onItemFocused = { itemIndex ->
                         currentFocusedRowIndex = -1
                         currentFocusedItemIndex = itemIndex
@@ -124,8 +149,6 @@ fun ClassicHomeContent(
             }
         }
 
-        val visibleCatalogRows = uiState.catalogRows.filter { it.items.isNotEmpty() }
-
         itemsIndexed(
             items = visibleCatalogRows,
             key = { _, item -> "${item.addonId}_${item.type}_${item.catalogId}" },
@@ -133,7 +156,16 @@ fun ClassicHomeContent(
         ) { index, catalogRow ->
             val catalogKey = "${catalogRow.addonId}_${catalogRow.type.toApiString()}_${catalogRow.catalogId}"
             val shouldRestoreFocus = restoringFocus && index == focusState.focusedRowIndex
-            val focusedItemIndex = if (shouldRestoreFocus) focusState.focusedItemIndex else -1
+            val shouldInitialFocusFirstCatalogRow =
+                shouldRequestInitialFocus &&
+                    !heroVisible &&
+                    uiState.continueWatchingItems.isEmpty() &&
+                    index == 0
+            val focusedItemIndex = when {
+                shouldRestoreFocus -> focusState.focusedItemIndex
+                shouldInitialFocusFirstCatalogRow -> 0
+                else -> -1
+            }
 
             val listState = rowStates.getOrPut(catalogKey) {
                 LazyListState(

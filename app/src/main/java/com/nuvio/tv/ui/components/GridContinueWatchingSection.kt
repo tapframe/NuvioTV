@@ -33,13 +33,25 @@ fun GridContinueWatchingSection(
     items: List<ContinueWatchingItem>,
     onItemClick: (ContinueWatchingItem) -> Unit,
     onRemoveItem: (ContinueWatchingItem) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    focusedItemIndex: Int = -1
 ) {
     if (items.isEmpty()) return
     var optionsItem by remember { mutableStateOf<ContinueWatchingItem?>(null) }
+    val itemFocusRequester = remember { FocusRequester() }
     val focusRequesters = remember(items.size) { List(items.size) { FocusRequester() } }
     var lastFocusedIndex by remember { mutableStateOf(-1) }
     var pendingFocusIndex by remember { mutableStateOf<Int?>(null) }
+
+    LaunchedEffect(focusedItemIndex) {
+        if (focusedItemIndex >= 0 && focusedItemIndex < items.size) {
+            kotlinx.coroutines.delay(100)
+            try {
+                itemFocusRequester.requestFocus()
+            } catch (_: IllegalStateException) {
+            }
+        }
+    }
 
     Column(modifier = modifier) {
         Box(
@@ -74,6 +86,8 @@ fun GridContinueWatchingSection(
             ) { index, progress ->
                 val focusModifier = if (pendingFocusIndex == index && index < focusRequesters.size) {
                     Modifier.focusRequester(focusRequesters[index])
+                } else if (index == focusedItemIndex) {
+                    Modifier.focusRequester(itemFocusRequester)
                 } else {
                     Modifier
                 }
