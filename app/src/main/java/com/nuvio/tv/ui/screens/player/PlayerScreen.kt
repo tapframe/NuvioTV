@@ -666,6 +666,7 @@ private fun PlayerControlsOverlay(
     val customAudioPainter = rememberRawSvgPainter(R.raw.ic_player_audio_filled)
     val customSourcePainter = rememberRawSvgPainter(R.raw.ic_player_source)
     val customAspectPainter = rememberRawSvgPainter(R.raw.ic_player_aspect_ratio)
+    val customEpisodesPainter = rememberRawSvgPainter(R.raw.ic_player_episodes)
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Top gradient
@@ -852,6 +853,7 @@ private fun PlayerControlsOverlay(
                     if (uiState.currentSeason != null && uiState.currentEpisode != null) {
                         ControlButton(
                             icon = Icons.AutoMirrored.Filled.List,
+                            iconPainter = customEpisodesPainter,
                             contentDescription = "Episodes",
                             onClick = onShowEpisodesPanel,
                             onFocused = onResetHideTimer

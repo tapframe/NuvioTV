@@ -88,8 +88,8 @@ internal fun SubtitleStyleSidePanel(
             .width(760.dp)
             .height(292.dp)
             .clip(RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp))
-            .background(Color(0xFF101010).copy(alpha = 0.96f))
-            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .background(Color(0xFF101010))
+            .padding(start = 16.dp, end = 16.dp, top = 22.dp, bottom = 10.dp)
     ) {
         Box(
             modifier = Modifier.fillMaxWidth(),
@@ -169,37 +169,39 @@ internal fun SubtitleStyleSidePanel(
                 }
                 SubtitleStyleSection(
                     title = "Outline",
+                    centerContent = false,
                     modifier = Modifier
                         .width(StyleCardWidth)
                         .height(StyleCardHeight)
                 ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        SubtitleStyleToggleButton(
-                            isEnabled = subtitleStyle.outlineEnabled,
-                            onClick = { onEvent(PlayerEvent.OnSetSubtitleOutlineEnabled(!subtitleStyle.outlineEnabled)) }
-                        )
-                        Text(
-                            text = "Color",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.7f)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PANEL_OUTLINE_COLORS.forEach { color ->
-                            SubtitleStyleColorChip(
-                                color = color.copy(alpha = if (subtitleStyle.outlineEnabled) 1f else 0.35f),
-                                isSelected = subtitleStyle.outlineColor == color.toArgb(),
-                                onClick = {
-                                    if (!subtitleStyle.outlineEnabled) {
-                                        onEvent(PlayerEvent.OnSetSubtitleOutlineEnabled(true))
-                                    }
-                                    onEvent(PlayerEvent.OnSetSubtitleOutlineColor(color.toArgb()))
-                                }
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            SubtitleStyleToggleButton(
+                                isEnabled = subtitleStyle.outlineEnabled,
+                                onClick = { onEvent(PlayerEvent.OnSetSubtitleOutlineEnabled(!subtitleStyle.outlineEnabled)) }
                             )
+                            Text(
+                                text = "Color",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            PANEL_OUTLINE_COLORS.forEach { color ->
+                                SubtitleStyleColorChip(
+                                    color = color.copy(alpha = if (subtitleStyle.outlineEnabled) 1f else 0.35f),
+                                    isSelected = subtitleStyle.outlineColor == color.toArgb(),
+                                    onClick = {
+                                        if (!subtitleStyle.outlineEnabled) {
+                                            onEvent(PlayerEvent.OnSetSubtitleOutlineEnabled(true))
+                                        }
+                                        onEvent(PlayerEvent.OnSetSubtitleOutlineColor(color.toArgb()))
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -254,26 +256,40 @@ internal fun SubtitleStyleSidePanel(
 @Composable
 private fun SubtitleStyleSection(
     title: String,
+    centerContent: Boolean = true,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
-    Column(
+    Box(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
             .background(Color.White.copy(alpha = 0.06f))
             .padding(12.dp)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(bottom = 6.dp)
+        Column(
+            modifier = Modifier.align(Alignment.TopStart)
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelMedium,
-                color = Color.White.copy(alpha = 0.8f)
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 6.dp)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White.copy(alpha = 0.8f)
+                )
+            }
         }
-        content()
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(if (centerContent) Alignment.CenterStart else Alignment.TopStart)
+                .padding(top = 14.dp),
+            contentAlignment = if (centerContent) Alignment.CenterStart else Alignment.TopStart
+        ) {
+            content()
+        }
     }
 }
 
