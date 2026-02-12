@@ -20,6 +20,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,6 +30,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalDensity
@@ -83,6 +86,7 @@ fun ContentCard(
     var isFocused by remember(item.id) { mutableStateOf(false) }
     var interactionNonce by remember(item.id) { mutableIntStateOf(0) }
     var isBackdropExpanded by remember(item.id) { mutableStateOf(false) }
+    var trailerFirstFrameRendered by remember(item.id, trailerPreviewUrl) { mutableStateOf(false) }
 
     LaunchedEffect(focusedPosterBackdropExpandEnabled, isFocused, interactionNonce, item.id) {
         if (!focusedPosterBackdropExpandEnabled || !isFocused) {
@@ -200,76 +204,102 @@ fun ContentCard(
                     focusedPosterBackdropTrailerEnabled &&
                     isFocused &&
                     trailerPreviewUrl != null
+
+                LaunchedEffect(shouldPlayTrailerPreview) {
+                    if (!shouldPlayTrailerPreview) {
+                        trailerFirstFrameRendered = false
+                    }
+                }
+
+                val trailerCoverAlpha by animateFloatAsState(
+                    targetValue = if (shouldPlayTrailerPreview && !trailerFirstFrameRendered) 1f else 0f,
+                    animationSpec = tween(durationMillis = 250),
+                    label = "trailerCoverAlpha"
+                )
+
                 if (shouldPlayTrailerPreview) {
                     TrailerPlayer(
                         trailerUrl = trailerPreviewUrl,
                         isPlaying = true,
                         onEnded = {},
+                        onFirstFrameRendered = {
+                            trailerFirstFrameRendered = true
+                        },
                         modifier = Modifier.fillMaxSize(),
                         muted = focusedPosterBackdropTrailerMuted
                     )
                 }
 
-                if (isBackdropExpanded && !shouldPlayTrailerPreview) {
-                    val bottomGradient = remember {
+                if (shouldPlayTrailerPreview) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(imageUrl)
+                            .crossfade(false)
+                            .size(width = requestWidthPx, height = requestHeightPx)
+                            .build(),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = trailerCoverAlpha },
+                        contentScale = ContentScale.Crop
+                    )
+                }
+
+                if (isBackdropExpanded) {
+                    val logoAreaGradient = remember {
                         Brush.verticalGradient(
                             colors = listOf(
                                 Color.Transparent,
-                                Color.Black.copy(alpha = 0.78f)
-                            )
-                        )
-                    }
-                    val leftGradient = remember {
-                        Brush.horizontalGradient(
-                            colors = listOf(
-                                Color.Black.copy(alpha = 0.66f),
-                                Color.Transparent
+                                Color.Black.copy(alpha = 0.76f)
                             )
                         )
                     }
 
                     Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(bottomGradient)
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(leftGradient)
-                    )
-
-                    Column(
                         modifier = Modifier
                             .align(Alignment.BottomStart)
-                            .padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
                             .fillMaxWidth(0.75f)
                     ) {
-                        if (item.logo != null) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(LocalContext.current)
-                                    .data(item.logo)
-                                    .crossfade(false)
-                                    .size(
-                                        width = requestWidthPx,
-                                        height = with(density) { 48.dp.roundToPx() }
-                                    )
-                                    .build(),
-                                contentDescription = item.name,
-                                modifier = Modifier
-                                    .height(48.dp)
-                                    .fillMaxWidth(),
-                                contentScale = ContentScale.Fit,
-                                alignment = Alignment.CenterStart
-                            )
-                        } else {
-                            Text(
-                                text = item.name,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Color.White,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .fillMaxWidth()
+                                .height(96.dp)
+                                .background(logoAreaGradient)
+                        )
+
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
+                                .fillMaxWidth()
+                        ) {
+                            if (item.logo != null) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current)
+                                        .data(item.logo)
+                                        .crossfade(false)
+                                        .size(
+                                            width = requestWidthPx,
+                                            height = with(density) { 48.dp.roundToPx() }
+                                        )
+                                        .build(),
+                                    contentDescription = item.name,
+                                    modifier = Modifier
+                                        .height(48.dp)
+                                        .fillMaxWidth(),
+                                    contentScale = ContentScale.Fit,
+                                    alignment = Alignment.CenterStart
+                                )
+                            } else {
+                                Text(
+                                    text = item.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = Color.White,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
                 }
