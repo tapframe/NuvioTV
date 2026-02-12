@@ -96,6 +96,7 @@ fun LayoutSettingsContent(
             add(LayoutSettingsSection.HeroSectionToggle)
             add(LayoutSettingsSection.DiscoverToggle)
             add(LayoutSettingsSection.PosterLabelsToggle)
+            add(LayoutSettingsSection.FocusedPosterBackdropExpandToggle)
             add(LayoutSettingsSection.CatalogAddonNameToggle)
             add(LayoutSettingsSection.LayoutCards)
             add(LayoutSettingsSection.PosterCards)
@@ -170,6 +171,18 @@ fun LayoutSettingsContent(
                         }
                     )
                 }
+                LayoutSettingsSection.FocusedPosterBackdropExpandToggle -> {
+                    FocusedPosterBackdropExpandToggle(
+                        isEnabled = uiState.focusedPosterBackdropExpandEnabled,
+                        onToggle = {
+                            viewModel.onEvent(
+                                LayoutSettingsEvent.SetFocusedPosterBackdropExpandEnabled(
+                                    !uiState.focusedPosterBackdropExpandEnabled
+                                )
+                            )
+                        }
+                    )
+                }
                 LayoutSettingsSection.CatalogAddonNameToggle -> {
                     CatalogAddonNameToggle(
                         isEnabled = uiState.catalogAddonNameEnabled,
@@ -232,6 +245,7 @@ private enum class LayoutSettingsSection {
     HeroSectionToggle,
     DiscoverToggle,
     PosterLabelsToggle,
+    FocusedPosterBackdropExpandToggle,
     CatalogAddonNameToggle,
     PosterCards,
     HeroCatalog
@@ -647,6 +661,76 @@ private fun CatalogAddonNameToggle(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "Show/hide addon source under catalog titles (for example, Cinemeta)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = NuvioColors.TextTertiary
+                )
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Box(
+                modifier = Modifier
+                    .width(48.dp)
+                    .height(28.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(
+                        if (isEnabled) NuvioColors.FocusRing else Color.White.copy(alpha = 0.15f)
+                    )
+                    .padding(3.dp),
+                contentAlignment = if (isEnabled) Alignment.CenterEnd else Alignment.CenterStart
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FocusedPosterBackdropExpandToggle(
+    isEnabled: Boolean,
+    onToggle: () -> Unit
+) {
+    var isFocused by remember { mutableStateOf(false) }
+
+    Card(
+        onClick = onToggle,
+        modifier = Modifier
+            .fillMaxWidth()
+            .onFocusChanged { isFocused = it.isFocused },
+        colors = CardDefaults.colors(
+            containerColor = NuvioColors.BackgroundCard,
+            focusedContainerColor = NuvioColors.FocusBackground
+        ),
+        border = CardDefaults.border(
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, NuvioColors.FocusRing),
+                shape = RoundedCornerShape(12.dp)
+            )
+        ),
+        shape = CardDefaults.shape(RoundedCornerShape(12.dp)),
+        scale = CardDefaults.scale(focusedScale = 1.0f, pressedScale = 1.0f)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Expand Focused Poster To Backdrop",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (isFocused) NuvioColors.TextPrimary else NuvioColors.TextSecondary
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "On home catalog rows, expand the focused poster to a backdrop after 3 seconds idle",
                     style = MaterialTheme.typography.bodySmall,
                     color = NuvioColors.TextTertiary
                 )

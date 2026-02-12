@@ -182,6 +182,7 @@ fun ClassicHomeContent(
                 posterCardStyle = posterCardStyle,
                 showPosterLabels = uiState.posterLabelsEnabled,
                 showAddonName = uiState.catalogAddonNameEnabled,
+                focusedPosterBackdropExpandEnabled = uiState.focusedPosterBackdropExpandEnabled,
                 onItemClick = { id, type, addonBaseUrl ->
                     onNavigateToDetail(id, type, addonBaseUrl)
                 },

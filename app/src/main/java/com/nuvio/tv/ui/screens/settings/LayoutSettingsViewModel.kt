@@ -24,6 +24,7 @@ data class LayoutSettingsUiState(
     val searchDiscoverEnabled: Boolean = true,
     val posterLabelsEnabled: Boolean = true,
     val catalogAddonNameEnabled: Boolean = true,
+    val focusedPosterBackdropExpandEnabled: Boolean = false,
     val posterCardWidthDp: Int = 126,
     val posterCardHeightDp: Int = 189,
     val posterCardCornerRadiusDp: Int = 12
@@ -43,6 +44,7 @@ sealed class LayoutSettingsEvent {
     data class SetSearchDiscoverEnabled(val enabled: Boolean) : LayoutSettingsEvent()
     data class SetPosterLabelsEnabled(val enabled: Boolean) : LayoutSettingsEvent()
     data class SetCatalogAddonNameEnabled(val enabled: Boolean) : LayoutSettingsEvent()
+    data class SetFocusedPosterBackdropExpandEnabled(val enabled: Boolean) : LayoutSettingsEvent()
     data class SetPosterCardWidth(val widthDp: Int) : LayoutSettingsEvent()
     data class SetPosterCardCornerRadius(val cornerRadiusDp: Int) : LayoutSettingsEvent()
     data object ResetPosterCardStyle : LayoutSettingsEvent()
@@ -99,6 +101,11 @@ class LayoutSettingsViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
+            layoutPreferenceDataStore.focusedPosterBackdropExpandEnabled.collectLatest { enabled ->
+                _uiState.update { it.copy(focusedPosterBackdropExpandEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
             layoutPreferenceDataStore.posterCardWidthDp.collectLatest { widthDp ->
                 _uiState.update { it.copy(posterCardWidthDp = widthDp) }
             }
@@ -125,6 +132,7 @@ class LayoutSettingsViewModel @Inject constructor(
             is LayoutSettingsEvent.SetSearchDiscoverEnabled -> setSearchDiscoverEnabled(event.enabled)
             is LayoutSettingsEvent.SetPosterLabelsEnabled -> setPosterLabelsEnabled(event.enabled)
             is LayoutSettingsEvent.SetCatalogAddonNameEnabled -> setCatalogAddonNameEnabled(event.enabled)
+            is LayoutSettingsEvent.SetFocusedPosterBackdropExpandEnabled -> setFocusedPosterBackdropExpandEnabled(event.enabled)
             is LayoutSettingsEvent.SetPosterCardWidth -> setPosterCardWidth(event.widthDp)
             is LayoutSettingsEvent.SetPosterCardCornerRadius -> setPosterCardCornerRadius(event.cornerRadiusDp)
             LayoutSettingsEvent.ResetPosterCardStyle -> resetPosterCardStyle()
@@ -170,6 +178,12 @@ class LayoutSettingsViewModel @Inject constructor(
     private fun setCatalogAddonNameEnabled(enabled: Boolean) {
         viewModelScope.launch {
             layoutPreferenceDataStore.setCatalogAddonNameEnabled(enabled)
+        }
+    }
+
+    private fun setFocusedPosterBackdropExpandEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            layoutPreferenceDataStore.setFocusedPosterBackdropExpandEnabled(enabled)
         }
     }
 

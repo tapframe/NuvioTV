@@ -52,6 +52,7 @@ fun CatalogRowSection(
     posterCardStyle: PosterCardStyle = PosterCardDefaults.Style,
     showPosterLabels: Boolean = true,
     showAddonName: Boolean = true,
+    focusedPosterBackdropExpandEnabled: Boolean = false,
     modifier: Modifier = Modifier,
     initialScrollIndex: Int = 0,
     focusedItemIndex: Int = -1,
@@ -119,6 +120,7 @@ fun CatalogRowSection(
                     item = item,
                     posterCardStyle = posterCardStyle,
                     showLabels = showPosterLabels,
+                    focusedPosterBackdropExpandEnabled = focusedPosterBackdropExpandEnabled,
                     onClick = { onItemClick(item.id, item.type.toApiString(), catalogRow.addonBaseUrl) },
                     modifier = Modifier
                         .onFocusChanged { focusState ->

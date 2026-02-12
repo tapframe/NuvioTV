@@ -75,6 +75,7 @@ class HomeViewModel @Inject constructor(
         loadHeroSectionPreference()
         loadPosterLabelPreference()
         loadCatalogAddonNamePreference()
+        loadFocusedPosterBackdropExpandPreference()
         loadHomeCatalogOrderPreference()
         loadDisabledHomeCatalogPreference()
         loadPosterCardStylePreferences()
@@ -121,6 +122,14 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             layoutPreferenceDataStore.catalogAddonNameEnabled.collectLatest { enabled ->
                 _uiState.update { it.copy(catalogAddonNameEnabled = enabled) }
+            }
+        }
+    }
+
+    private fun loadFocusedPosterBackdropExpandPreference() {
+        viewModelScope.launch {
+            layoutPreferenceDataStore.focusedPosterBackdropExpandEnabled.collectLatest { enabled ->
+                _uiState.update { it.copy(focusedPosterBackdropExpandEnabled = enabled) }
             }
         }
     }
