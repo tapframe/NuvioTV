@@ -20,6 +20,7 @@
         android:icon="@drawable/tv_banner"
         android:label="Nuvio"
         android:largeHeap="true"
+        android:usesCleartextTraffic="true"
         android:supportsRtl="true"
         android:theme="@style/Theme.MyApplication">
 
