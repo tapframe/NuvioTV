@@ -80,7 +80,7 @@ class MetaRepositoryImpl @Inject constructor(
         if (metaAddons.isEmpty()) {
             // Fallback: try all addons that have the type in their supported types
             val fallbackAddons = addons.filter { addon ->
-                addon.types.any { it.toApiString() == type }
+                addon.rawTypes.any { it.equals(type, ignoreCase = true) }
             }
 
             for (addon in fallbackAddons) {

@@ -6,6 +6,7 @@ import androidx.compose.runtime.Immutable
 data class Meta(
     val id: String,
     val type: ContentType,
+    val rawType: String = type.toApiString(),
     val name: String,
     val poster: String?,
     val posterShape: PosterShape,
@@ -27,7 +28,10 @@ data class Meta(
     val awards: String?,
     val language: String?,
     val links: List<MetaLink>
-)
+) {
+    val apiType: String
+        get() = type.toApiString(rawType)
+}
 
 @Immutable
 data class MetaCastMember(

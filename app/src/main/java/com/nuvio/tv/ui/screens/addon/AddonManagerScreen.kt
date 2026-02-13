@@ -86,6 +86,7 @@ import com.nuvio.tv.ui.theme.NuvioColors
 @Composable
 fun AddonManagerScreen(
     viewModel: AddonManagerViewModel = hiltViewModel(),
+    showBuiltInHeader: Boolean = true,
     onNavigateToCatalogOrder: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -127,7 +128,7 @@ fun AddonManagerScreen(
                 Text(
                     text = "Addons",
                     style = MaterialTheme.typography.headlineMedium,
-                    color = NuvioColors.TextPrimary
+                    color = if (showBuiltInHeader) NuvioColors.TextPrimary else Color.Transparent
                 )
             }
 
@@ -911,7 +912,7 @@ private fun AddonCard(
 
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Catalogs: ${addon.catalogs.size} • Types: ${addon.types.joinToString { it.toApiString() }}",
+                text = "Catalogs: ${addon.catalogs.size} • Types: ${addon.rawTypes.joinToString()}",
                 style = MaterialTheme.typography.bodySmall,
                 color = NuvioColors.TextTertiary
             )

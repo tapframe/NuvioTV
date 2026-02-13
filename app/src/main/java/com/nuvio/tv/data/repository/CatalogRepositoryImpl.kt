@@ -42,6 +42,7 @@ class CatalogRepositoryImpl @Inject constructor(
                     catalogId = catalogId,
                     catalogName = catalogName,
                     type = ContentType.fromString(type),
+                    rawType = type,
                     items = items,
                     isLoading = false,
                     hasMore = supportsSkip && items.isNotEmpty(),

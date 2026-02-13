@@ -32,7 +32,8 @@ import com.nuvio.tv.ui.screens.home.ContinueWatchingItem
 @Composable
 fun NuvioNavHost(
     navController: NavHostController,
-    startDestination: String = Screen.Home.route
+    startDestination: String = Screen.Home.route,
+    hideBuiltInHeaders: Boolean = false
 ) {
     NavHost(
         navController = navController,
@@ -312,6 +313,7 @@ fun NuvioNavHost(
 
         composable(Screen.Search.route) {
             SearchScreen(
+                showBuiltInHeader = !hideBuiltInHeaders,
                 onNavigateToDetail = { itemId, itemType, addonBaseUrl ->
                     navController.navigate(Screen.Detail.createRoute(itemId, itemType, addonBaseUrl))
                 },
@@ -323,6 +325,7 @@ fun NuvioNavHost(
 
         composable(Screen.Library.route) {
             LibraryScreen(
+                showBuiltInHeader = !hideBuiltInHeaders,
                 onNavigateToDetail = { itemId, itemType, addonBaseUrl ->
                     navController.navigate(Screen.Detail.createRoute(itemId, itemType, addonBaseUrl))
                 }
@@ -331,6 +334,7 @@ fun NuvioNavHost(
 
         composable(Screen.Settings.route) {
             SettingsScreen(
+                showBuiltInHeader = !hideBuiltInHeaders,
                 onNavigateToPlugins = { navController.navigate(Screen.Plugins.route) },
                 onNavigateToTrakt = { navController.navigate(Screen.Trakt.route) }
             )
@@ -368,6 +372,7 @@ fun NuvioNavHost(
 
         composable(Screen.AddonManager.route) {
             AddonManagerScreen(
+                showBuiltInHeader = !hideBuiltInHeaders,
                 onNavigateToCatalogOrder = { navController.navigate(Screen.CatalogOrder.route) }
             )
         }

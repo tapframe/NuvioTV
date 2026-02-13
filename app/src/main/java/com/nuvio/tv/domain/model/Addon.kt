@@ -12,16 +12,21 @@ data class Addon(
     val baseUrl: String,
     val catalogs: List<CatalogDescriptor>,
     val types: List<ContentType>,
+    val rawTypes: List<String> = types.map { it.toApiString() },
     val resources: List<AddonResource>
 )
 
 @Immutable
 data class CatalogDescriptor(
     val type: ContentType,
+    val rawType: String = type.toApiString(),
     val id: String,
     val name: String,
     val extra: List<CatalogExtra> = emptyList()
-)
+) {
+    val apiType: String
+        get() = type.toApiString(rawType)
+}
 
 @Immutable
 data class CatalogExtra(
@@ -36,4 +41,3 @@ data class AddonResource(
     val types: List<String>,
     val idPrefixes: List<String>?
 )
-

@@ -187,7 +187,7 @@ internal fun DiscoverSection(
                     onItemClick = { _, item ->
                         onNavigateToDetail(
                             item.id,
-                            item.type.toApiString(),
+                            item.apiType,
                             selectedCatalog?.addonBaseUrl ?: ""
                         )
                     }

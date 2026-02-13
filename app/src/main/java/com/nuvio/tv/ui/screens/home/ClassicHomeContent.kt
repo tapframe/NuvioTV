@@ -114,7 +114,7 @@ fun ClassicHomeContent(
                     onItemClick = { item ->
                         onNavigateToDetail(
                             item.id,
-                            item.type.toApiString(),
+                            item.apiType,
                             ""
                         )
                     }
@@ -175,7 +175,7 @@ fun ClassicHomeContent(
             key = { _, item -> "${item.addonId}_${item.type}_${item.catalogId}" },
             contentType = { _, _ -> "catalog_row" }
         ) { index, catalogRow ->
-            val catalogKey = "${catalogRow.addonId}_${catalogRow.type.toApiString()}_${catalogRow.catalogId}"
+            val catalogKey = "${catalogRow.addonId}_${catalogRow.apiType}_${catalogRow.catalogId}"
             val shouldRestoreFocus = restoringFocus && index == focusState.focusedRowIndex
             val shouldInitialFocusFirstCatalogRow =
                 shouldRequestInitialFocus &&
@@ -200,6 +200,7 @@ fun ClassicHomeContent(
                 showPosterLabels = uiState.posterLabelsEnabled,
                 showAddonName = uiState.catalogAddonNameEnabled,
                 focusedPosterBackdropExpandEnabled = uiState.focusedPosterBackdropExpandEnabled,
+                focusedPosterBackdropExpandDelaySeconds = uiState.focusedPosterBackdropExpandDelaySeconds,
                 focusedPosterBackdropTrailerEnabled = uiState.focusedPosterBackdropTrailerEnabled,
                 focusedPosterBackdropTrailerMuted = uiState.focusedPosterBackdropTrailerMuted,
                 trailerPreviewUrls = uiState.trailerPreviewUrls,
@@ -211,7 +212,7 @@ fun ClassicHomeContent(
                     onNavigateToCatalogSeeAll(
                         catalogRow.catalogId,
                         catalogRow.addonId,
-                        catalogRow.type.toApiString()
+                        catalogRow.apiType
                     )
                 },
                 listState = listState,

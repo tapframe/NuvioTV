@@ -174,7 +174,7 @@ fun MetaDetailsScreen(
                     onEpisodeClick = { video ->
                         onPlayClick(
                             video.id,
-                            meta.type.toApiString(),
+                            meta.apiType,
                             meta.id,
                             meta.name,
                             video.thumbnail ?: meta.poster,
@@ -191,7 +191,7 @@ fun MetaDetailsScreen(
                     onPlayClick = { videoId ->
                         onPlayClick(
                             videoId,
-                            meta.type.toApiString(),
+                            meta.apiType,
                             meta.id,
                             meta.name,
                             meta.poster,

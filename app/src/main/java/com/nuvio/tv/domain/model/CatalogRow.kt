@@ -10,9 +10,13 @@ data class CatalogRow(
     val catalogId: String,
     val catalogName: String,
     val type: ContentType,
+    val rawType: String = type.toApiString(),
     val items: List<MetaPreview>,
     val isLoading: Boolean = false,
     val hasMore: Boolean = true,
     val currentPage: Int = 0,
     val supportsSkip: Boolean = false
-)
+) {
+    val apiType: String
+        get() = type.toApiString(rawType)
+}

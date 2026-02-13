@@ -376,14 +376,15 @@ class PluginManager @Inject constructor(
                 .header("User-Agent", "NuvioTV/1.0")
                 .build()
             
-            val response = httpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                Log.e(TAG, "Failed to fetch manifest: ${response.code}")
-                return@withContext null
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "Failed to fetch manifest: ${response.code}")
+                    return@withContext null
+                }
+
+                val body = response.body?.string() ?: return@withContext null
+                manifestAdapter.fromJson(body)
             }
-            
-            val body = response.body?.string() ?: return@withContext null
-            manifestAdapter.fromJson(body)
             
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching manifest: ${e.message}", e)
@@ -413,8 +414,9 @@ class PluginManager @Inject constructor(
                     .head()
                     .build()
                 
-                val headResponse = httpClient.newCall(headRequest).execute()
-                val contentLength = headResponse.header("Content-Length")?.toLongOrNull() ?: 0
+                val contentLength = httpClient.newCall(headRequest).execute().use { headResponse ->
+                    headResponse.header("Content-Length")?.toLongOrNull() ?: 0
+                }
                 
                 if (contentLength > MAX_RESPONSE_SIZE) {
                     Log.w(TAG, "Scraper ${info.name} too large: $contentLength bytes")
@@ -427,13 +429,14 @@ class PluginManager @Inject constructor(
                     .header("User-Agent", "NuvioTV/1.0")
                     .build()
                 
-                val codeResponse = httpClient.newCall(codeRequest).execute()
-                if (!codeResponse.isSuccessful) {
-                    Log.e(TAG, "Failed to download scraper ${info.name}: ${codeResponse.code}")
-                    return@forEach
+                val code = httpClient.newCall(codeRequest).execute().use { codeResponse ->
+                    if (!codeResponse.isSuccessful) {
+                        Log.e(TAG, "Failed to download scraper ${info.name}: ${codeResponse.code}")
+                        return@forEach
+                    }
+
+                    codeResponse.body?.string() ?: return@forEach
                 }
-                
-                val code = codeResponse.body?.string() ?: return@forEach
 
                 try {
                     val sha = sha256Hex(code)

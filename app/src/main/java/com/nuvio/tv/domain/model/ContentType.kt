@@ -8,7 +8,7 @@ enum class ContentType {
     UNKNOWN;
 
     companion object {
-        fun fromString(value: String): ContentType = when (value.lowercase()) {
+        fun fromString(value: String): ContentType = when (value.trim().lowercase()) {
             "movie" -> MOVIE
             "series" -> SERIES
             "channel" -> CHANNEL
@@ -17,11 +17,15 @@ enum class ContentType {
         }
     }
 
-    fun toApiString(): String = when (this) {
+    fun toApiString(fallbackType: String? = null): String = when (this) {
         MOVIE -> "movie"
         SERIES -> "series"
         CHANNEL -> "channel"
         TV -> "tv"
-        UNKNOWN -> "movie"
+        UNKNOWN -> fallbackType
+            ?.trim()
+            ?.lowercase()
+            ?.takeIf { it.isNotEmpty() }
+            ?: "movie"
     }
 }

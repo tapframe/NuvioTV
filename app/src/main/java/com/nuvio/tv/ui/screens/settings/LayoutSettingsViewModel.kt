@@ -20,11 +20,14 @@ data class LayoutSettingsUiState(
     val availableCatalogs: List<CatalogInfo> = emptyList(),
     val heroCatalogKey: String? = null,
     val sidebarCollapsedByDefault: Boolean = false,
+    val modernSidebarEnabled: Boolean = false,
+    val modernSidebarBlurEnabled: Boolean = false,
     val heroSectionEnabled: Boolean = true,
     val searchDiscoverEnabled: Boolean = true,
     val posterLabelsEnabled: Boolean = true,
     val catalogAddonNameEnabled: Boolean = true,
     val focusedPosterBackdropExpandEnabled: Boolean = true,
+    val focusedPosterBackdropExpandDelaySeconds: Int = 3,
     val focusedPosterBackdropTrailerEnabled: Boolean = false,
     val focusedPosterBackdropTrailerMuted: Boolean = true,
     val posterCardWidthDp: Int = 126,
@@ -42,11 +45,14 @@ sealed class LayoutSettingsEvent {
     data class SelectLayout(val layout: HomeLayout) : LayoutSettingsEvent()
     data class SelectHeroCatalog(val catalogKey: String) : LayoutSettingsEvent()
     data class SetSidebarCollapsed(val collapsed: Boolean) : LayoutSettingsEvent()
+    data class SetModernSidebarEnabled(val enabled: Boolean) : LayoutSettingsEvent()
+    data class SetModernSidebarBlurEnabled(val enabled: Boolean) : LayoutSettingsEvent()
     data class SetHeroSectionEnabled(val enabled: Boolean) : LayoutSettingsEvent()
     data class SetSearchDiscoverEnabled(val enabled: Boolean) : LayoutSettingsEvent()
     data class SetPosterLabelsEnabled(val enabled: Boolean) : LayoutSettingsEvent()
     data class SetCatalogAddonNameEnabled(val enabled: Boolean) : LayoutSettingsEvent()
     data class SetFocusedPosterBackdropExpandEnabled(val enabled: Boolean) : LayoutSettingsEvent()
+    data class SetFocusedPosterBackdropExpandDelaySeconds(val seconds: Int) : LayoutSettingsEvent()
     data class SetFocusedPosterBackdropTrailerEnabled(val enabled: Boolean) : LayoutSettingsEvent()
     data class SetFocusedPosterBackdropTrailerMuted(val muted: Boolean) : LayoutSettingsEvent()
     data class SetPosterCardWidth(val widthDp: Int) : LayoutSettingsEvent()
@@ -85,6 +91,16 @@ class LayoutSettingsViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
+            layoutPreferenceDataStore.modernSidebarEnabled.collectLatest { enabled ->
+                _uiState.update { it.copy(modernSidebarEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            layoutPreferenceDataStore.modernSidebarBlurEnabled.collectLatest { enabled ->
+                _uiState.update { it.copy(modernSidebarBlurEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
             layoutPreferenceDataStore.heroSectionEnabled.collectLatest { enabled ->
                 _uiState.update { it.copy(heroSectionEnabled = enabled) }
             }
@@ -107,6 +123,11 @@ class LayoutSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             layoutPreferenceDataStore.focusedPosterBackdropExpandEnabled.collectLatest { enabled ->
                 _uiState.update { it.copy(focusedPosterBackdropExpandEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            layoutPreferenceDataStore.focusedPosterBackdropExpandDelaySeconds.collectLatest { seconds ->
+                _uiState.update { it.copy(focusedPosterBackdropExpandDelaySeconds = seconds) }
             }
         }
         viewModelScope.launch {
@@ -142,11 +163,14 @@ class LayoutSettingsViewModel @Inject constructor(
             is LayoutSettingsEvent.SelectLayout -> selectLayout(event.layout)
             is LayoutSettingsEvent.SelectHeroCatalog -> selectHeroCatalog(event.catalogKey)
             is LayoutSettingsEvent.SetSidebarCollapsed -> setSidebarCollapsed(event.collapsed)
+            is LayoutSettingsEvent.SetModernSidebarEnabled -> setModernSidebarEnabled(event.enabled)
+            is LayoutSettingsEvent.SetModernSidebarBlurEnabled -> setModernSidebarBlurEnabled(event.enabled)
             is LayoutSettingsEvent.SetHeroSectionEnabled -> setHeroSectionEnabled(event.enabled)
             is LayoutSettingsEvent.SetSearchDiscoverEnabled -> setSearchDiscoverEnabled(event.enabled)
             is LayoutSettingsEvent.SetPosterLabelsEnabled -> setPosterLabelsEnabled(event.enabled)
             is LayoutSettingsEvent.SetCatalogAddonNameEnabled -> setCatalogAddonNameEnabled(event.enabled)
             is LayoutSettingsEvent.SetFocusedPosterBackdropExpandEnabled -> setFocusedPosterBackdropExpandEnabled(event.enabled)
+            is LayoutSettingsEvent.SetFocusedPosterBackdropExpandDelaySeconds -> setFocusedPosterBackdropExpandDelaySeconds(event.seconds)
             is LayoutSettingsEvent.SetFocusedPosterBackdropTrailerEnabled -> setFocusedPosterBackdropTrailerEnabled(event.enabled)
             is LayoutSettingsEvent.SetFocusedPosterBackdropTrailerMuted -> setFocusedPosterBackdropTrailerMuted(event.muted)
             is LayoutSettingsEvent.SetPosterCardWidth -> setPosterCardWidth(event.widthDp)
@@ -170,6 +194,18 @@ class LayoutSettingsViewModel @Inject constructor(
     private fun setSidebarCollapsed(collapsed: Boolean) {
         viewModelScope.launch {
             layoutPreferenceDataStore.setSidebarCollapsedByDefault(collapsed)
+        }
+    }
+
+    private fun setModernSidebarEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            layoutPreferenceDataStore.setModernSidebarEnabled(enabled)
+        }
+    }
+
+    private fun setModernSidebarBlurEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            layoutPreferenceDataStore.setModernSidebarBlurEnabled(enabled)
         }
     }
 
@@ -200,6 +236,12 @@ class LayoutSettingsViewModel @Inject constructor(
     private fun setFocusedPosterBackdropExpandEnabled(enabled: Boolean) {
         viewModelScope.launch {
             layoutPreferenceDataStore.setFocusedPosterBackdropExpandEnabled(enabled)
+        }
+    }
+
+    private fun setFocusedPosterBackdropExpandDelaySeconds(seconds: Int) {
+        viewModelScope.launch {
+            layoutPreferenceDataStore.setFocusedPosterBackdropExpandDelaySeconds(seconds)
         }
     }
 
@@ -246,7 +288,7 @@ class LayoutSettingsViewModel @Inject constructor(
                         }
                         .map { catalog ->
                             CatalogInfo(
-                                key = "${addon.id}_${catalog.type.toApiString()}_${catalog.id}",
+                                key = "${addon.id}_${catalog.apiType}_${catalog.id}",
                                 name = catalog.name,
                                 addonName = addon.name
                             )

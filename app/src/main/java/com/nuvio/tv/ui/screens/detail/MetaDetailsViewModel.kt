@@ -218,7 +218,7 @@ class MetaDetailsViewModel @Inject constructor(
         val settings = tmdbSettingsDataStore.settings.first()
         if (!settings.enabled) return meta
 
-        val tmdbId = tmdbService.ensureTmdbId(meta.id, meta.type.toApiString())
+        val tmdbId = tmdbService.ensureTmdbId(meta.id, meta.apiType)
             ?: tmdbService.ensureTmdbId(itemId, itemType)
             ?: return meta
 
@@ -285,7 +285,7 @@ class MetaDetailsViewModel @Inject constructor(
         }
 
         // Group: Episodes (titles, overviews, thumbnails, runtime)
-        if (settings.useEpisodes && meta.type.toApiString() in listOf("series", "tv")) {
+        if (settings.useEpisodes && meta.apiType in listOf("series", "tv")) {
             val seasonNumbers = meta.videos.mapNotNull { it.season }.distinct()
             val episodeMap = tmdbMetadataService.fetchEpisodeEnrichment(
                 tmdbId = tmdbId,
@@ -334,7 +334,7 @@ class MetaDetailsViewModel @Inject constructor(
     private fun calculateNextToWatch() {
         val meta = _uiState.value.meta ?: return
         val progressMap = _uiState.value.episodeProgressMap
-        val isSeries = meta.type.toApiString() in listOf("series", "tv")
+        val isSeries = meta.apiType in listOf("series", "tv")
 
         if (!isSeries) {
             // For movies, check if there's an in-progress watch
@@ -629,7 +629,7 @@ class MetaDetailsViewModel @Inject constructor(
 
     private fun toggleMovieWatched() {
         val meta = _uiState.value.meta ?: return
-        if (meta.type.toApiString() != "movie") return
+        if (meta.apiType != "movie") return
         if (_uiState.value.isMovieWatchedPending) return
 
         viewModelScope.launch {
@@ -689,7 +689,7 @@ class MetaDetailsViewModel @Inject constructor(
     private fun buildCompletedMovieProgress(meta: Meta): WatchProgress {
         return WatchProgress(
             contentId = itemId,
-            contentType = meta.type.toApiString(),
+            contentType = meta.apiType,
             name = meta.name,
             poster = meta.poster,
             backdrop = meta.background,
@@ -709,7 +709,7 @@ class MetaDetailsViewModel @Inject constructor(
         val runtimeMs = video.runtime?.toLong()?.times(60_000L) ?: 1L
         return WatchProgress(
             contentId = itemId,
-            contentType = meta.type.toApiString(),
+            contentType = meta.apiType,
             name = meta.name,
             poster = meta.poster,
             backdrop = video.thumbnail ?: meta.background,
@@ -750,7 +750,7 @@ class MetaDetailsViewModel @Inject constructor(
         val parsedIds = parseContentIds(id)
         return LibraryEntryInput(
             itemId = id,
-            itemType = type.toApiString(),
+            itemType = apiType,
             title = name,
             year = year,
             traktId = parsedIds.trakt,
@@ -791,7 +791,7 @@ class MetaDetailsViewModel @Inject constructor(
             val year = meta.releaseInfo?.split("-")?.firstOrNull()
 
             val tmdbId = try {
-                tmdbService.ensureTmdbId(meta.id, meta.type.toApiString())
+                tmdbService.ensureTmdbId(meta.id, meta.apiType)
             } catch (_: Exception) {
                 null
             }

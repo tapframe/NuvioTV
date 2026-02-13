@@ -1,5 +1,6 @@
 package com.nuvio.tv.ui.screens.home
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.core.network.NetworkResult
@@ -50,6 +51,9 @@ class HomeViewModel @Inject constructor(
     private val tmdbMetadataService: TmdbMetadataService,
     private val trailerService: TrailerService
 ) : ViewModel() {
+    companion object {
+        private const val TAG = "HomeViewModel"
+    }
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -83,6 +87,7 @@ class HomeViewModel @Inject constructor(
         loadPosterLabelPreference()
         loadCatalogAddonNamePreference()
         loadFocusedPosterBackdropExpandPreference()
+        loadFocusedPosterBackdropExpandDelayPreference()
         loadFocusedPosterBackdropTrailerPreference()
         loadFocusedPosterBackdropTrailerMutedPreference()
         loadHomeCatalogOrderPreference()
@@ -115,6 +120,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             layoutPreferenceDataStore.heroSectionEnabled.collectLatest { enabled ->
                 _uiState.update { it.copy(heroSectionEnabled = enabled) }
+                scheduleUpdateCatalogRows()
             }
         }
     }
@@ -139,6 +145,14 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             layoutPreferenceDataStore.focusedPosterBackdropExpandEnabled.collectLatest { enabled ->
                 _uiState.update { it.copy(focusedPosterBackdropExpandEnabled = enabled) }
+            }
+        }
+    }
+
+    private fun loadFocusedPosterBackdropExpandDelayPreference() {
+        viewModelScope.launch {
+            layoutPreferenceDataStore.focusedPosterBackdropExpandDelaySeconds.collectLatest { seconds ->
+                _uiState.update { it.copy(focusedPosterBackdropExpandDelaySeconds = seconds) }
             }
         }
     }
@@ -177,7 +191,7 @@ class HomeViewModel @Inject constructor(
                 title = item.name,
                 year = extractYear(item.releaseInfo),
                 tmdbId = null,
-                type = item.type.toApiString()
+                type = item.apiType
             )
 
             val isLatestFocusedItem =
@@ -386,7 +400,11 @@ class HomeViewModel @Inject constructor(
 
     private fun removeContinueWatching(contentId: String, season: Int? = null, episode: Int? = null) {
         viewModelScope.launch {
-            watchProgressRepository.removeProgress(contentId, season, episode)
+            Log.d(
+                TAG,
+                "removeContinueWatching requested contentId=$contentId season=$season episode=$episode; removing all progress for content"
+            )
+            watchProgressRepository.removeProgress(contentId = contentId, season = null, episode = null)
         }
     }
 
@@ -428,7 +446,7 @@ class HomeViewModel @Inject constructor(
                         it.isSearchOnlyCatalog() || isCatalogDisabled(
                             addonBaseUrl = addon.baseUrl,
                             addonId = addon.id,
-                            type = it.type.toApiString(),
+                            type = it.apiType,
                             catalogId = it.id,
                             catalogName = it.name
                         )
@@ -452,7 +470,7 @@ class HomeViewModel @Inject constructor(
                     addonName = addon.name,
                     catalogId = catalog.id,
                     catalogName = catalog.name,
-                    type = catalog.type.toApiString(),
+                    type = catalog.apiType,
                     skip = 0,
                     supportsSkip = supportsSkip
                 ).collect { result ->
@@ -460,7 +478,7 @@ class HomeViewModel @Inject constructor(
                         is NetworkResult.Success -> {
                             val key = catalogKey(
                                 addonId = addon.id,
-                                type = catalog.type.toApiString(),
+                                type = catalog.apiType,
                                 catalogId = catalog.id
                             )
                             catalogsMap[key] = result.data
@@ -498,7 +516,7 @@ class HomeViewModel @Inject constructor(
                 addonName = addon.name,
                 catalogId = catalogId,
                 catalogName = currentRow.catalogName,
-                type = currentRow.type.toApiString(),
+                type = currentRow.apiType,
                 skip = nextSkip,
                 supportsSkip = currentRow.supportsSkip
             ).collect { result ->
@@ -543,12 +561,26 @@ class HomeViewModel @Inject constructor(
             val heroSourceRow = if (heroCatalogKey != null) {
                 catalogSnapshot[heroCatalogKey]
             } else {
-                orderedRows.firstOrNull { row -> row.items.any { it.background != null } }
+                orderedRows.firstOrNull { row -> row.items.any { it.hasHeroArtwork() } }
             }
-            val computedHeroItems = heroSourceRow?.items
-                ?.filter { it.background != null || it.poster != null }
-                ?.take(7)
-                ?: orderedRows.flatMap { it.items }.take(7)
+
+            val heroItemsFromSelectedCatalog = heroSourceRow
+                ?.items
+                .orEmpty()
+                .filter { it.hasHeroArtwork() }
+
+            val fallbackHeroItemsWithArtwork = orderedRows
+                .asSequence()
+                .flatMap { it.items.asSequence() }
+                .filter { it.hasHeroArtwork() }
+                .take(7)
+                .toList()
+
+            val computedHeroItems = when {
+                heroItemsFromSelectedCatalog.isNotEmpty() -> heroItemsFromSelectedCatalog.take(7)
+                fallbackHeroItemsWithArtwork.isNotEmpty() -> fallbackHeroItemsWithArtwork
+                else -> orderedRows.flatMap { it.items }.take(7)
+            }
 
             val computedDisplayRows = orderedRows.map { row ->
                 if (row.items.size > 25) row.copy(items = row.items.take(25)) else row
@@ -566,7 +598,7 @@ class HomeViewModel @Inject constructor(
                                 catalogId = row.catalogId,
                                 addonBaseUrl = row.addonBaseUrl,
                                 addonId = row.addonId,
-                                type = row.type.toApiString()
+                                type = row.apiType
                             )
                         )
                         val hasEnoughForSeeAll = row.items.size >= 15
@@ -586,7 +618,7 @@ class HomeViewModel @Inject constructor(
                                 GridItem.SeeAll(
                                     catalogId = row.catalogId,
                                     addonId = row.addonId,
-                                    type = row.type.toApiString()
+                                    type = row.apiType
                                 )
                             )
                         }
@@ -641,7 +673,7 @@ class HomeViewModel @Inject constructor(
         if (!settings.useArtwork && !settings.useBasicInfo && !settings.useDetails) return items
 
         return items.map { item ->
-            val tmdbId = tmdbService.ensureTmdbId(item.id, item.type.toApiString()) ?: return@map item
+            val tmdbId = tmdbService.ensureTmdbId(item.id, item.apiType) ?: return@map item
             val enrichment = tmdbMetadataService.fetchEnrichment(
                 tmdbId = tmdbId,
                 contentType = item.type,
@@ -720,7 +752,7 @@ class HomeViewModel @Inject constructor(
                     it.isSearchOnlyCatalog() || isCatalogDisabled(
                         addonBaseUrl = addon.baseUrl,
                         addonId = addon.id,
-                        type = it.type.toApiString(),
+                        type = it.apiType,
                         catalogId = it.id,
                         catalogName = it.name
                     )
@@ -728,7 +760,7 @@ class HomeViewModel @Inject constructor(
                 .forEach { catalog ->
                     val key = catalogKey(
                         addonId = addon.id,
-                        type = catalog.type.toApiString(),
+                        type = catalog.apiType,
                         catalogId = catalog.id
                     )
                     if (key !in orderedKeys) {
@@ -764,6 +796,10 @@ class HomeViewModel @Inject constructor(
 
     private fun CatalogDescriptor.isSearchOnlyCatalog(): Boolean {
         return extra.any { extra -> extra.name == "search" && extra.isRequired }
+    }
+
+    private fun MetaPreview.hasHeroArtwork(): Boolean {
+        return !background.isNullOrBlank() || !poster.isNullOrBlank()
     }
 
     private fun extractYear(releaseInfo: String?): String? {

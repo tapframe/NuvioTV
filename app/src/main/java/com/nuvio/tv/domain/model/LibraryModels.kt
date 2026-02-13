@@ -23,6 +23,7 @@ data class LibraryEntry(
         return MetaPreview(
             id = id,
             type = ContentType.fromString(type),
+            rawType = type,
             name = name,
             poster = poster,
             posterShape = posterShape,

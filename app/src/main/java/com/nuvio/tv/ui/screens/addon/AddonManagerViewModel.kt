@@ -47,7 +47,7 @@ class AddonManagerViewModel @Inject constructor(
 
     private fun loadLogoBytes() {
         try {
-            val inputStream = context.resources.openRawResource(R.drawable.nuviotv_logo)
+            val inputStream = context.resources.openRawResource(R.drawable.app_logo_wordmark)
             logoBytes = inputStream.use { it.readBytes() }
         } catch (_: Exception) { }
     }
@@ -476,7 +476,7 @@ class AddonManagerViewModel @Inject constructor(
                 .forEach { catalog ->
                     val key = catalogKey(
                         addonId = addon.id,
-                        type = catalog.type.toApiString(),
+                        type = catalog.apiType,
                         catalogId = catalog.id
                     )
                     if (seenKeys.add(key)) {
@@ -485,13 +485,13 @@ class AddonManagerViewModel @Inject constructor(
                                 key = key,
                                 disableKey = disableCatalogKey(
                                     addonBaseUrl = addon.baseUrl,
-                                    type = catalog.type.toApiString(),
+                                    type = catalog.apiType,
                                     catalogId = catalog.id,
                                     catalogName = catalog.name
                                 ),
                                 catalogName = catalog.name,
                                 addonName = addon.name,
-                                typeLabel = catalog.type.toApiString()
+                                typeLabel = catalog.apiType
                             )
                         )
                     }

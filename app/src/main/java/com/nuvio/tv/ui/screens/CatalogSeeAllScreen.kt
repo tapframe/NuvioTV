@@ -77,7 +77,7 @@ fun CatalogSeeAllScreen(
     // Find the matching catalog row from full (untruncated) data
     val catalogKey = "${addonId}_${type}_${catalogId}"
     val catalogRow = uiState.fullCatalogRows.find {
-        "${it.addonId}_${it.type.toApiString()}_${it.catalogId}" == catalogKey
+        "${it.addonId}_${it.apiType}_${it.catalogId}" == catalogKey
     }
 
     val gridState = rememberTvLazyGridState()
@@ -99,7 +99,7 @@ fun CatalogSeeAllScreen(
                     val row = catalogRow
                     if (row != null && row.hasMore && !row.isLoading) {
                         viewModel.onEvent(
-                            HomeEvent.OnLoadMoreCatalog(row.catalogId, row.addonId, row.type.toApiString())
+                            HomeEvent.OnLoadMoreCatalog(row.catalogId, row.addonId, row.apiType)
                         )
                     }
                 }
@@ -196,7 +196,7 @@ fun CatalogSeeAllScreen(
                             onClick = {
                                 onNavigateToDetail(
                                     item.id,
-                                    item.type.toApiString(),
+                                    item.apiType,
                                     catalogRow.addonBaseUrl
                                 )
                             }

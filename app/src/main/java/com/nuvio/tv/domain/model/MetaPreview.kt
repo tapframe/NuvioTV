@@ -6,6 +6,7 @@ import androidx.compose.runtime.Immutable
 data class MetaPreview(
     val id: String,
     val type: ContentType,
+    val rawType: String = type.toApiString(),
     val name: String,
     val poster: String?,
     val posterShape: PosterShape,
@@ -15,4 +16,7 @@ data class MetaPreview(
     val releaseInfo: String?,
     val imdbRating: Float?,
     val genres: List<String>
-)
+) {
+    val apiType: String
+        get() = type.toApiString(rawType)
+}

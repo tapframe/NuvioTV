@@ -183,7 +183,7 @@ fun GridHomeContent(
                                 onItemClick = { item ->
                                     onNavigateToDetail(
                                         item.id,
-                                        item.type.toApiString(),
+                                        item.apiType,
                                         ""
                                     )
                                 }
@@ -274,7 +274,7 @@ fun GridHomeContent(
                                 onClick = {
                                     onNavigateToDetail(
                                         gridItem.item.id,
-                                        gridItem.item.type.toApiString(),
+                                        gridItem.item.apiType,
                                         gridItem.addonBaseUrl
                                     )
                                 }

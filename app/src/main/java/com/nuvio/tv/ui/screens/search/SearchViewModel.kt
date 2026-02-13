@@ -170,7 +170,7 @@ class SearchViewModel @Inject constructor(
 
             // Preserve addon manifest order.
             searchTargets.forEach { (addon, catalog) ->
-                val key = catalogKey(addonId = addon.id, type = catalog.type.toApiString(), catalogId = catalog.id)
+                val key = catalogKey(addonId = addon.id, type = catalog.apiType, catalogId = catalog.id)
                 if (key !in catalogOrder) {
                     catalogOrder.add(key)
                 }
@@ -206,7 +206,7 @@ class SearchViewModel @Inject constructor(
             addonName = addon.name,
             catalogId = catalog.id,
             catalogName = catalog.name,
-            type = catalog.type.toApiString(),
+            type = catalog.apiType,
             skip = 0,
             extraArgs = mapOf("search" to query),
             supportsSkip = supportsSkip
@@ -215,7 +215,7 @@ class SearchViewModel @Inject constructor(
                 is NetworkResult.Success -> {
                     val key = catalogKey(
                         addonId = addon.id,
-                        type = catalog.type.toApiString(),
+                        type = catalog.apiType,
                         catalogId = catalog.id
                     )
                     catalogsMap[key] = result.data
@@ -261,7 +261,7 @@ class SearchViewModel @Inject constructor(
                 addonName = addon.name,
                 catalogId = catalogId,
                 catalogName = currentRow.catalogName,
-                type = currentRow.type.toApiString(),
+                type = currentRow.apiType,
                 skip = nextSkip,
                 extraArgs = mapOf("search" to query),
                 supportsSkip = currentRow.supportsSkip
@@ -304,7 +304,7 @@ class SearchViewModel @Inject constructor(
         val discoverCatalogs = addons.flatMap { addon ->
             addon.catalogs
                 .filter { catalog ->
-                    (catalog.type.toApiString() == "movie" || catalog.type.toApiString() == "series") &&
+                    (catalog.apiType == "movie" || catalog.apiType == "series") &&
                         !catalog.extra.any { it.name == "search" && it.isRequired }
                 }
                 .map { catalog ->
@@ -313,13 +313,13 @@ class SearchViewModel @Inject constructor(
                         ?.options
                         .orEmpty()
                     DiscoverCatalog(
-                        key = "${addon.id}_${catalog.type.toApiString()}_${catalog.id}",
+                        key = "${addon.id}_${catalog.apiType}_${catalog.id}",
                         addonId = addon.id,
                         addonName = addon.name,
                         addonBaseUrl = addon.baseUrl,
                         catalogId = catalog.id,
                         catalogName = catalog.name,
-                        type = catalog.type.toApiString(),
+                        type = catalog.apiType,
                         genres = genres,
                         supportsSkip = catalog.extra.any { it.name == "skip" }
                     )
@@ -470,13 +470,13 @@ class SearchViewModel @Inject constructor(
                             _uiState.value.discoverResults + _uiState.value.pendingDiscoverResults
                         }
                         val existingKeys = existing.asSequence()
-                            .map { "${it.type.toApiString()}:${it.id}" }
+                            .map { "${it.apiType}:${it.id}" }
                             .toSet()
                         val hasNewUniqueIncoming = incoming.any { item ->
-                            "${item.type.toApiString()}:${item.id}" !in existingKeys
+                            "${item.apiType}:${item.id}" !in existingKeys
                         }
                         val merged = if (reset) incoming else (existing + incoming)
-                        val deduped = merged.distinctBy { "${it.type.toApiString()}:${it.id}" }
+                        val deduped = merged.distinctBy { "${it.apiType}:${it.id}" }
                         val visible = deduped.take(DISCOVER_INITIAL_LIMIT)
                         val pending = deduped.drop(DISCOVER_INITIAL_LIMIT)
                         val shouldStopPagination = !reset && !hasNewUniqueIncoming

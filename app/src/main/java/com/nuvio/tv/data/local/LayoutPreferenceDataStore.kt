@@ -32,11 +32,15 @@ class LayoutPreferenceDataStore @Inject constructor(
     private val homeCatalogOrderKeysKey = stringPreferencesKey("home_catalog_order_keys")
     private val disabledHomeCatalogKeysKey = stringPreferencesKey("disabled_home_catalog_keys")
     private val sidebarCollapsedKey = booleanPreferencesKey("sidebar_collapsed_by_default")
+    private val modernSidebarEnabledKey = booleanPreferencesKey("modern_sidebar_enabled")
+    private val legacyModernSidebarEnabledKey = booleanPreferencesKey("glass_sidepanel_enabled")
+    private val modernSidebarBlurEnabledKey = booleanPreferencesKey("modern_sidebar_blur_enabled")
     private val heroSectionEnabledKey = booleanPreferencesKey("hero_section_enabled")
     private val searchDiscoverEnabledKey = booleanPreferencesKey("search_discover_enabled")
     private val posterLabelsEnabledKey = booleanPreferencesKey("poster_labels_enabled")
     private val catalogAddonNameEnabledKey = booleanPreferencesKey("catalog_addon_name_enabled")
     private val focusedPosterBackdropExpandEnabledKey = booleanPreferencesKey("focused_poster_backdrop_expand_enabled")
+    private val focusedPosterBackdropExpandDelaySecondsKey = intPreferencesKey("focused_poster_backdrop_expand_delay_seconds")
     private val focusedPosterBackdropTrailerEnabledKey = booleanPreferencesKey("focused_poster_backdrop_trailer_enabled")
     private val focusedPosterBackdropTrailerMutedKey = booleanPreferencesKey("focused_poster_backdrop_trailer_muted")
     private val posterCardWidthDpKey = intPreferencesKey("poster_card_width_dp")
@@ -47,6 +51,8 @@ class LayoutPreferenceDataStore @Inject constructor(
         const val DEFAULT_POSTER_CARD_WIDTH_DP = 126
         const val DEFAULT_POSTER_CARD_HEIGHT_DP = 189
         const val DEFAULT_POSTER_CARD_CORNER_RADIUS_DP = 12
+        const val DEFAULT_FOCUSED_POSTER_BACKDROP_EXPAND_DELAY_SECONDS = 3
+        const val MIN_FOCUSED_POSTER_BACKDROP_EXPAND_DELAY_SECONDS = 1
     }
 
     val selectedLayout: Flow<HomeLayout> = dataStore.data.map { prefs ->
@@ -75,7 +81,21 @@ class LayoutPreferenceDataStore @Inject constructor(
     }
 
     val sidebarCollapsedByDefault: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[sidebarCollapsedKey] ?: false
+        val modernSidebarEnabled =
+            prefs[modernSidebarEnabledKey] ?: prefs[legacyModernSidebarEnabledKey] ?: false
+        if (modernSidebarEnabled) {
+            false
+        } else {
+            prefs[sidebarCollapsedKey] ?: false
+        }
+    }
+
+    val modernSidebarEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[modernSidebarEnabledKey] ?: prefs[legacyModernSidebarEnabledKey] ?: false
+    }
+
+    val modernSidebarBlurEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[modernSidebarBlurEnabledKey] ?: false
     }
 
     val heroSectionEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
@@ -96,6 +116,12 @@ class LayoutPreferenceDataStore @Inject constructor(
 
     val focusedPosterBackdropExpandEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[focusedPosterBackdropExpandEnabledKey] ?: true
+    }
+
+    val focusedPosterBackdropExpandDelaySeconds: Flow<Int> = dataStore.data.map { prefs ->
+        (prefs[focusedPosterBackdropExpandDelaySecondsKey]
+            ?: DEFAULT_FOCUSED_POSTER_BACKDROP_EXPAND_DELAY_SECONDS)
+            .coerceAtLeast(MIN_FOCUSED_POSTER_BACKDROP_EXPAND_DELAY_SECONDS)
     }
 
     val focusedPosterBackdropTrailerEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
@@ -155,7 +181,25 @@ class LayoutPreferenceDataStore @Inject constructor(
 
     suspend fun setSidebarCollapsedByDefault(collapsed: Boolean) {
         dataStore.edit { prefs ->
-            prefs[sidebarCollapsedKey] = collapsed
+            val modernSidebarEnabled =
+                prefs[modernSidebarEnabledKey] ?: prefs[legacyModernSidebarEnabledKey] ?: false
+            prefs[sidebarCollapsedKey] = if (modernSidebarEnabled) false else collapsed
+        }
+    }
+
+    suspend fun setModernSidebarEnabled(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[modernSidebarEnabledKey] = enabled
+            prefs.remove(legacyModernSidebarEnabledKey)
+            if (enabled) {
+                prefs[sidebarCollapsedKey] = false
+            }
+        }
+    }
+
+    suspend fun setModernSidebarBlurEnabled(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[modernSidebarBlurEnabledKey] = enabled
         }
     }
 
@@ -190,6 +234,13 @@ class LayoutPreferenceDataStore @Inject constructor(
                 prefs[focusedPosterBackdropTrailerEnabledKey] = false
                 prefs[focusedPosterBackdropTrailerMutedKey] = true
             }
+        }
+    }
+
+    suspend fun setFocusedPosterBackdropExpandDelaySeconds(seconds: Int) {
+        dataStore.edit { prefs ->
+            prefs[focusedPosterBackdropExpandDelaySecondsKey] =
+                seconds.coerceAtLeast(MIN_FOCUSED_POSTER_BACKDROP_EXPAND_DELAY_SECONDS)
         }
     }
 

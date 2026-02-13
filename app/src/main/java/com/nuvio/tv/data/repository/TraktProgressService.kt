@@ -1,5 +1,6 @@
 package com.nuvio.tv.data.repository
 
+import android.util.Log
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.data.remote.api.TraktApi
 import com.nuvio.tv.data.remote.dto.trakt.TraktEpisodeDto
@@ -55,6 +56,10 @@ class TraktProgressService @Inject constructor(
     private val traktAuthService: TraktAuthService,
     private val metaRepository: MetaRepository
 ) {
+    companion object {
+        private const val TAG = "TraktProgressSvc"
+    }
+
     data class TraktCachedStats(
         val moviesWatched: Int = 0,
         val showsWatched: Int = 0,
@@ -275,6 +280,10 @@ class TraktProgressService @Inject constructor(
     }
 
     suspend fun removeProgress(contentId: String, season: Int?, episode: Int?) {
+        Log.d(
+            TAG,
+            "removeProgress start contentId=$contentId season=$season episode=$episode"
+        )
         applyOptimisticRemoval(contentId, season, episode)
         val playbackMovies = getPlayback("movies", force = true)
         val playbackEpisodes = getPlayback("episodes", force = true)
@@ -284,6 +293,7 @@ class TraktProgressService @Inject constructor(
             .filter { normalizeContentId(it.movie?.ids) == target }
             .forEach { item ->
                 item.id?.let { playbackId ->
+                    Log.d(TAG, "removeProgress deleting movie playbackId=$playbackId")
                     traktAuthService.executeAuthorizedRequest { authHeader ->
                         traktApi.deletePlayback(authHeader, playbackId)
                     }
@@ -302,12 +312,17 @@ class TraktProgressService @Inject constructor(
             }
             .forEach { item ->
                 item.id?.let { playbackId ->
+                    Log.d(
+                        TAG,
+                        "removeProgress deleting episode playbackId=$playbackId s=${item.episode?.season} e=${item.episode?.number}"
+                    )
                     traktAuthService.executeAuthorizedRequest { authHeader ->
                         traktApi.deletePlayback(authHeader, playbackId)
                     }
                 }
             }
 
+        Log.d(TAG, "removeProgress refreshNow contentId=$contentId")
         refreshNow()
     }
 

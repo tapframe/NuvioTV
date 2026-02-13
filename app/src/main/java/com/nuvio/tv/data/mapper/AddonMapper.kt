@@ -9,6 +9,7 @@ import com.nuvio.tv.domain.model.CatalogDescriptor
 import com.nuvio.tv.domain.model.ContentType
 
 fun AddonManifestDto.toDomain(baseUrl: String): Addon {
+    val normalizedTypes = types.map { it.trim().lowercase() }
     return Addon(
         id = id,
         name = name,
@@ -17,14 +18,17 @@ fun AddonManifestDto.toDomain(baseUrl: String): Addon {
         logo = logo,
         baseUrl = baseUrl,
         catalogs = catalogs.map { it.toDomain() },
-        types = types.map { ContentType.fromString(it) },
-        resources = parseResources(resources, types)
+        types = normalizedTypes.map { ContentType.fromString(it) },
+        rawTypes = normalizedTypes,
+        resources = parseResources(resources, normalizedTypes)
     )
 }
 
 fun CatalogDescriptorDto.toDomain(): CatalogDescriptor {
+    val normalizedType = type.trim().lowercase()
     return CatalogDescriptor(
-        type = ContentType.fromString(type),
+        type = ContentType.fromString(normalizedType),
+        rawType = normalizedType,
         id = id,
         name = name,
         extra = extra.orEmpty().map { dto ->
@@ -63,4 +67,3 @@ private fun parseResources(resources: List<Any>, defaultTypes: List<String>): Li
         }
     }
 }
-

@@ -75,6 +75,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun LibraryScreen(
     viewModel: LibraryViewModel = hiltViewModel(),
+    showBuiltInHeader: Boolean = true,
     onNavigateToDetail: (String, String, String?) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -151,14 +152,14 @@ fun LibraryScreen(
                 Text(
                     text = "Library",
                     style = MaterialTheme.typography.headlineMedium,
-                    color = NuvioColors.TextPrimary,
+                    color = if (showBuiltInHeader) NuvioColors.TextPrimary else Color.Transparent,
                     fontWeight = FontWeight.SemiBold,
                     letterSpacing = 0.5.sp
                 )
                 Text(
                     text = if (uiState.sourceMode == LibrarySourceMode.TRAKT) "TRAKT" else "LOCAL",
                     style = MaterialTheme.typography.labelLarge,
-                    color = NuvioColors.TextTertiary,
+                    color = if (showBuiltInHeader) NuvioColors.TextTertiary else Color.Transparent,
                     fontWeight = FontWeight.Medium,
                     letterSpacing = 2.sp
                 )

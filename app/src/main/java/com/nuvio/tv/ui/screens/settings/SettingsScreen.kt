@@ -94,6 +94,7 @@ private enum class SettingsCategory(
 
 @Composable
 fun SettingsScreen(
+    showBuiltInHeader: Boolean = true,
     onNavigateToPlugins: () -> Unit = {},
     onNavigateToTrakt: () -> Unit = {}
 ) {
@@ -136,7 +137,7 @@ fun SettingsScreen(
                 Text(
                     text = "Settings",
                     style = MaterialTheme.typography.headlineMedium,
-                    color = NuvioColors.TextPrimary,
+                    color = if (showBuiltInHeader) NuvioColors.TextPrimary else Color.Transparent,
                     fontWeight = FontWeight.SemiBold,
                     letterSpacing = 0.5.sp
                 )
@@ -145,7 +146,7 @@ fun SettingsScreen(
                 Text(
                     text = selectedCategory.displayName,
                     style = MaterialTheme.typography.labelLarge,
-                    color = NuvioColors.TextTertiary,
+                    color = if (showBuiltInHeader) NuvioColors.TextTertiary else Color.Transparent,
                     letterSpacing = 2.sp,
                     fontWeight = FontWeight.Medium
                 )

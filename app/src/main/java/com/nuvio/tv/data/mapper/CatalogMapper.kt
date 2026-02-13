@@ -9,6 +9,7 @@ fun MetaPreviewDto.toDomain(): MetaPreview {
     return MetaPreview(
         id = id,
         type = ContentType.fromString(type),
+        rawType = type,
         name = name,
         poster = poster,
         posterShape = PosterShape.fromString(posterShape),

@@ -1,5 +1,6 @@
 package com.nuvio.tv.data.local
 
+import android.util.Log
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -23,6 +24,10 @@ private val Context.watchProgressDataStore: DataStore<Preferences> by preference
 class WatchProgressPreferences @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
+    companion object {
+        private const val TAG = "WatchProgressPrefs"
+    }
+
     private val gson = Gson()
     private val watchProgressKey = stringPreferencesKey("watch_progress_map")
 
@@ -138,19 +143,28 @@ class WatchProgressPreferences @Inject constructor(
         context.watchProgressDataStore.edit { preferences ->
             val json = preferences[watchProgressKey] ?: "{}"
             val map = parseProgressMap(json).toMutableMap()
-            
+
+            val beforeSize = map.size
+            Log.d(
+                TAG,
+                "removeProgress start contentId=$contentId season=$season episode=$episode entriesBefore=$beforeSize"
+            )
+
             if (season != null && episode != null) {
                 // Remove specific episode progress
                 val key = "${contentId}_s${season}e${episode}"
                 map.remove(key)
+                Log.d(TAG, "removeProgress episodeKey=$key existsAfter=${map.containsKey(key)}")
             } else {
                 // Remove all progress for this content
                 val keysToRemove = map.keys.filter { key ->
                     key == contentId || key.startsWith("${contentId}_s")
                 }
+                Log.d(TAG, "removeProgress removingKeys=${keysToRemove.joinToString()}")
                 keysToRemove.forEach { map.remove(it) }
             }
-            
+
+            Log.d(TAG, "removeProgress complete contentId=$contentId entriesAfter=${map.size}")
             preferences[watchProgressKey] = gson.toJson(map)
         }
     }
@@ -188,7 +202,7 @@ class WatchProgressPreferences @Inject constructor(
             val type = object : TypeToken<Map<String, WatchProgress>>() {}.type
             gson.fromJson(json, type) ?: emptyMap()
         } catch (e: Exception) {
-            android.util.Log.e("WatchProgressPrefs", "Failed to parse progress data", e)
+            Log.e(TAG, "Failed to parse progress data", e)
             emptyMap()
         }
     }

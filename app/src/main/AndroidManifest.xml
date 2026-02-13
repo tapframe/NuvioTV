@@ -16,8 +16,8 @@
     <application
         android:name=".NuvioApplication"
         android:allowBackup="true"
-        android:banner="@drawable/tv_banner"
-        android:icon="@drawable/tv_banner"
+        android:banner="@mipmap/banner"
+        android:icon="@mipmap/ic_launcher"
         android:label="Nuvio"
         android:largeHeap="true"
         android:usesCleartextTraffic="true"

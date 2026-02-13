@@ -51,7 +51,6 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.delay
 
-private const val IDLE_BACKDROP_EXPAND_DELAY_MS = 3_000L
 private const val BACKDROP_ASPECT_RATIO = 16f / 9f
 private const val YEAR_REGEX = "\\b(19|20)\\d{2}\\b"
 
@@ -64,6 +63,7 @@ fun ContentCard(
     posterCardStyle: PosterCardStyle = PosterCardDefaults.Style,
     showLabels: Boolean = true,
     focusedPosterBackdropExpandEnabled: Boolean = false,
+    focusedPosterBackdropExpandDelaySeconds: Int = 3,
     focusedPosterBackdropTrailerEnabled: Boolean = false,
     focusedPosterBackdropTrailerMuted: Boolean = true,
     trailerPreviewUrl: String? = null,
@@ -88,14 +88,21 @@ fun ContentCard(
     var isBackdropExpanded by remember(item.id) { mutableStateOf(false) }
     var trailerFirstFrameRendered by remember(item.id, trailerPreviewUrl) { mutableStateOf(false) }
 
-    LaunchedEffect(focusedPosterBackdropExpandEnabled, isFocused, interactionNonce, item.id) {
+    LaunchedEffect(
+        focusedPosterBackdropExpandEnabled,
+        focusedPosterBackdropExpandDelaySeconds,
+        isFocused,
+        interactionNonce,
+        item.id
+    ) {
         if (!focusedPosterBackdropExpandEnabled || !isFocused) {
             isBackdropExpanded = false
             return@LaunchedEffect
         }
 
         isBackdropExpanded = false
-        delay(IDLE_BACKDROP_EXPAND_DELAY_MS)
+        val backdropDelayMs = focusedPosterBackdropExpandDelaySeconds.coerceAtLeast(1) * 1000L
+        delay(backdropDelayMs)
         if (isFocused && focusedPosterBackdropExpandEnabled) {
             isBackdropExpanded = true
         }
@@ -118,7 +125,7 @@ fun ContentCard(
     val metaTokens = remember(item.type, item.genres, item.releaseInfo, item.imdbRating) {
         buildList {
             add(
-                item.type.toApiString()
+                item.apiType
                     .replaceFirstChar { ch -> ch.uppercase() }
             )
             item.genres.firstOrNull()?.let { add(it) }

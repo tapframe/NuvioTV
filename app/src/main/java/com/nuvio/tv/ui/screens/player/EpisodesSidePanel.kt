@@ -49,6 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.tv.material3.Border
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Card
@@ -64,6 +66,7 @@ import androidx.compose.material.icons.filled.Check
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -253,6 +256,23 @@ private fun EpisodesListView(
     onEpisodeSelected: (Video) -> Unit
 ) {
     val seasonTabFocusRequester = remember { FocusRequester() }
+    val episodesListState = rememberLazyListState()
+    val currentEpisodeIndex = remember(uiState.episodes, uiState.currentSeason, uiState.currentEpisode) {
+        uiState.episodes.indexOfFirst { episode ->
+            episode.season == uiState.currentSeason && episode.episode == uiState.currentEpisode
+        }
+    }
+
+    LaunchedEffect(uiState.showEpisodeStreams, uiState.episodes, currentEpisodeIndex) {
+        if (uiState.showEpisodeStreams || uiState.episodes.isEmpty()) return@LaunchedEffect
+
+        val targetIndex = if (currentEpisodeIndex >= 0) currentEpisodeIndex else 0
+        runCatching {
+            episodesListState.scrollToItem(targetIndex)
+            delay(32)
+            episodesFocusRequester.requestFocus()
+        }
+    }
 
     when {
         uiState.isLoadingEpisodes -> {
@@ -296,20 +316,26 @@ private fun EpisodesListView(
                 }
 
                 LazyColumn(
+                    state = episodesListState,
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(top = 4.dp),
                     modifier = Modifier
                         .fillMaxHeight()
                         .focusProperties { up = seasonTabFocusRequester }
                 ) {
-                    items(uiState.episodes) { episode ->
+                    itemsIndexed(uiState.episodes) { index, episode ->
                         val isCurrent = episode.season == uiState.currentSeason &&
                             episode.episode == uiState.currentEpisode
+                        val requestInitialFocus = if (currentEpisodeIndex >= 0) {
+                            isCurrent
+                        } else {
+                            index == 0
+                        }
                         EpisodeItem(
                             episode = episode,
                             isCurrent = isCurrent,
                             focusRequester = episodesFocusRequester,
-                            requestInitialFocus = isCurrent,
+                            requestInitialFocus = requestInitialFocus,
                             onClick = { onEpisodeSelected(episode) }
                         )
                     }
@@ -516,4 +542,3 @@ private fun EpisodeItem(
         }
     }
 }
-

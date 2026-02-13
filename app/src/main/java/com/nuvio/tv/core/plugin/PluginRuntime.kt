@@ -11,6 +11,7 @@ import com.nuvio.tv.domain.model.LocalScraperResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import okhttp3.Call
 import okhttp3.Headers
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -144,6 +145,7 @@ class PluginRuntime @Inject constructor() {
         // Clear caches before execution
         documentCache.clear()
         elementCache.clear()
+        val inFlightCalls = ConcurrentHashMap.newKeySet<Call>()
 
         var resultJson = "[]"
 
@@ -179,7 +181,7 @@ class PluginRuntime @Inject constructor() {
                     val method = args.getOrNull(1)?.toString() ?: "GET"
                     val headersJson = args.getOrNull(2)?.toString() ?: "{}"
                     val body = args.getOrNull(3)?.toString() ?: ""
-                    performNativeFetch(url, method, headersJson, body)
+                    performNativeFetch(url, method, headersJson, body, inFlightCalls)
                 }
 
                 // Define URL parser
@@ -368,10 +370,19 @@ class PluginRuntime @Inject constructor() {
             // Clean up caches
             documentCache.clear()
             elementCache.clear()
+            // Cancel any network calls still in progress when plugin execution exits.
+            inFlightCalls.forEach { call -> call.cancel() }
+            inFlightCalls.clear()
         }
     }
 
-    private fun performNativeFetch(url: String, method: String, headersJson: String, body: String): String {
+    private fun performNativeFetch(
+        url: String,
+        method: String,
+        headersJson: String,
+        body: String,
+        inFlightCalls: MutableSet<Call>
+    ): String {
         Log.d(TAG, "Fetch: $method $url body=${body.take(200)}")
         return try {
             val headers = mutableMapOf<String, String>()
@@ -417,56 +428,66 @@ class PluginRuntime @Inject constructor() {
             }
 
             val request = requestBuilder.build()
-            val response = try {
-                httpClient.newCall(request).execute()
-            } catch (protoEx: java.net.ProtocolException) {
-                // Handle 407 Proxy Auth or other protocol issues gracefully
-                Log.w(TAG, "Protocol error for ${url}: ${protoEx.message}")
-                return gson.toJson(mapOf(
-                    "ok" to false,
-                    "status" to 407,
-                    "statusText" to (protoEx.message ?: "Protocol error"),
-                    "url" to url,
-                    "body" to "",
-                    "headers" to emptyMap<String, String>()
-                ))
-            }
+            val call = httpClient.newCall(request)
+            inFlightCalls.add(call)
 
-            val responseBodyBytes = response.body?.bytes() ?: ByteArray(0)
-            val contentEncoding = response.header("Content-Encoding")?.lowercase()?.trim()
-            val decodedBytes = try {
-                when (contentEncoding) {
-                    "gzip" -> GZIPInputStream(ByteArrayInputStream(responseBodyBytes)).use { it.readBytes() }
-                    "deflate" -> InflaterInputStream(ByteArrayInputStream(responseBodyBytes)).use { it.readBytes() }
-                    else -> responseBodyBytes
+            try {
+                val response = try {
+                    call.execute()
+                } catch (protoEx: java.net.ProtocolException) {
+                    // Handle 407 Proxy Auth or other protocol issues gracefully
+                    Log.w(TAG, "Protocol error for ${url}: ${protoEx.message}")
+                    return gson.toJson(mapOf(
+                        "ok" to false,
+                        "status" to 407,
+                        "statusText" to (protoEx.message ?: "Protocol error"),
+                        "url" to url,
+                        "body" to "",
+                        "headers" to emptyMap<String, String>()
+                    ))
                 }
-            } catch (e: Exception) {
-                // If decoding fails, fall back to raw bytes.
-                responseBodyBytes
-            }
 
-            val charset = response.body?.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8
-            val responseBody = try {
-                String(decodedBytes, charset)
-            } catch (e: Exception) {
-                String(decodedBytes, Charsets.UTF_8)
-            }
-            val responseHeaders = mutableMapOf<String, String>()
-            response.headers.forEach { (name, value) ->
-                responseHeaders[name.lowercase()] = value
-            }
+                response.use { httpResponse ->
+                    val bodyContentType = httpResponse.body?.contentType()
+                    val responseBodyBytes = httpResponse.body?.bytes() ?: ByteArray(0)
+                    val contentEncoding = httpResponse.header("Content-Encoding")?.lowercase()?.trim()
+                    val decodedBytes = try {
+                        when (contentEncoding) {
+                            "gzip" -> GZIPInputStream(ByteArrayInputStream(responseBodyBytes)).use { it.readBytes() }
+                            "deflate" -> InflaterInputStream(ByteArrayInputStream(responseBodyBytes)).use { it.readBytes() }
+                            else -> responseBodyBytes
+                        }
+                    } catch (e: Exception) {
+                        // If decoding fails, fall back to raw bytes.
+                        responseBodyBytes
+                    }
 
-            val result = mapOf(
-                "ok" to response.isSuccessful,
-                "status" to response.code,
-                "statusText" to response.message,
-                "url" to response.request.url.toString(),
-                "body" to responseBody,
-                "headers" to responseHeaders
-            )
+                    val charset = bodyContentType?.charset(Charsets.UTF_8) ?: Charsets.UTF_8
+                    val responseBody = try {
+                        String(decodedBytes, charset)
+                    } catch (e: Exception) {
+                        String(decodedBytes, Charsets.UTF_8)
+                    }
+                    val responseHeaders = mutableMapOf<String, String>()
+                    httpResponse.headers.forEach { (name, value) ->
+                        responseHeaders[name.lowercase()] = value
+                    }
 
-            Log.d(TAG, "Fetch result: ${response.code} ${response.message} url=$url bodyLen=${responseBody.length} bodyPreview=${responseBody.take(300)}")
-            gson.toJson(result)
+                    val result = mapOf(
+                        "ok" to httpResponse.isSuccessful,
+                        "status" to httpResponse.code,
+                        "statusText" to httpResponse.message,
+                        "url" to httpResponse.request.url.toString(),
+                        "body" to responseBody,
+                        "headers" to responseHeaders
+                    )
+
+                    Log.d(TAG, "Fetch result: ${httpResponse.code} ${httpResponse.message} url=$url bodyLen=${responseBody.length} bodyPreview=${responseBody.take(300)}")
+                    gson.toJson(result)
+                }
+            } finally {
+                inFlightCalls.remove(call)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Fetch error: ${e.message}")
             gson.toJson(mapOf(

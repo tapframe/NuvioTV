@@ -133,7 +133,7 @@ class CatalogOrderViewModel @Inject constructor(
                 .forEach { catalog ->
                     val key = catalogKey(
                         addonId = addon.id,
-                        type = catalog.type.toApiString(),
+                        type = catalog.apiType,
                         catalogId = catalog.id
                     )
                     if (seenKeys.add(key)) {
@@ -142,13 +142,13 @@ class CatalogOrderViewModel @Inject constructor(
                                 key = key,
                                 disableKey = disableKey(
                                     addonBaseUrl = addon.baseUrl,
-                                    type = catalog.type.toApiString(),
+                                    type = catalog.apiType,
                                     catalogId = catalog.id,
                                     catalogName = catalog.name
                                 ),
                                 catalogName = catalog.name,
                                 addonName = addon.name,
-                                typeLabel = catalog.type.toApiString()
+                                typeLabel = catalog.apiType
                             )
                         )
                     }
