@@ -227,6 +227,17 @@ fun LayoutSettingsContent(
                     onFocused = { focusedSection = LayoutSettingsSection.HOME_CONTENT }
                 )
                 CompactToggleRow(
+                    title = "Glass Sidepanel ON/OFF",
+                    subtitle = "Enable floating frosted sidepanel navigation.",
+                    checked = uiState.glassSidepanelEnabled,
+                    onToggle = {
+                        viewModel.onEvent(
+                            LayoutSettingsEvent.SetGlassSidepanelEnabled(!uiState.glassSidepanelEnabled)
+                        )
+                    },
+                    onFocused = { focusedSection = LayoutSettingsSection.HOME_CONTENT }
+                )
+                CompactToggleRow(
                     title = "Show Hero Section",
                     subtitle = "Display hero carousel at top of home.",
                     checked = uiState.heroSectionEnabled,
