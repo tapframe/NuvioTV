@@ -127,6 +127,7 @@ class MetaDetailsViewModel @Inject constructor(
     }
 
     private fun observeWatchProgress() {
+        if (itemType.lowercase() == "movie") return
         viewModelScope.launch {
             watchProgressRepository.getAllEpisodeProgress(itemId).collectLatest { progressMap ->
                 _uiState.update { it.copy(episodeProgressMap = progressMap) }

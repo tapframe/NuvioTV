@@ -102,7 +102,7 @@ class TraktProgressService @Inject constructor(
     @Volatile
     private var lastFastSyncRequestMs: Long = 0L
 
-    private val playbackCacheTtlMs = 2_000L
+    private val playbackCacheTtlMs = 30_000L
     private val userStatsCacheTtlMs = 60_000L
     private val optimisticTtlMs = 3 * 60_000L
     private val metadataHydrationLimit = 30
@@ -350,7 +350,7 @@ class TraktProgressService @Inject constructor(
 
     private fun refreshTicker(): Flow<Unit> = flow {
         while (true) {
-            delay(20_000)
+            delay(60_000)
             emit(Unit)
         }
     }
