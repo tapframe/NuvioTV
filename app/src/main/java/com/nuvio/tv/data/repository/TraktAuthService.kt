@@ -116,13 +116,18 @@ class TraktAuthService @Inject constructor(
             return true
         }
 
-        val response = traktApi.refreshToken(
-            TraktRefreshTokenRequestDto(
-                refreshToken = refreshToken,
-                clientId = BuildConfig.TRAKT_CLIENT_ID,
-                clientSecret = BuildConfig.TRAKT_CLIENT_SECRET
+        val response = try {
+            traktApi.refreshToken(
+                TraktRefreshTokenRequestDto(
+                    refreshToken = refreshToken,
+                    clientId = BuildConfig.TRAKT_CLIENT_ID,
+                    clientSecret = BuildConfig.TRAKT_CLIENT_SECRET
+                )
             )
-        )
+        } catch (e: IOException) {
+            Log.w("TraktAuthService", "Network error while refreshing token", e)
+            return false
+        }
 
         val tokenBody = response.body()
         if (!response.isSuccessful || tokenBody == null) {

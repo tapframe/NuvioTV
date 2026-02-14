@@ -118,15 +118,24 @@ class TraktProgressService @Inject constructor(
     private val optimisticTtlMs = 3 * 60_000L
     private val metadataHydrationLimit = 30
     private val fastSyncThrottleMs = 3_000L
+    private val baseRefreshIntervalMs = 60_000L
+    private val maxRefreshIntervalMs = 10 * 60_000L
+    @Volatile
+    private var refreshIntervalMs = baseRefreshIntervalMs
+    @Volatile
+    private var consecutiveRefreshFailures = 0
 
     init {
         scope.launch {
             refreshEvents().collectLatest {
-                try {
+                val success = try {
                     refreshRemoteSnapshot()
+                    true
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to refresh remote snapshot", e)
+                    false
                 }
+                updateRefreshBackoff(success)
             }
         }
     }
@@ -375,13 +384,35 @@ class TraktProgressService @Inject constructor(
 
     private fun refreshTicker(): Flow<Unit> = flow {
         while (true) {
-            delay(60_000)
+            delay(refreshIntervalMs)
             emit(Unit)
         }
     }
 
     private fun refreshEvents(): Flow<Unit> {
         return merge(refreshTicker(), refreshSignals).onStart { emit(Unit) }
+    }
+
+    private fun updateRefreshBackoff(success: Boolean) {
+        if (success) {
+            if (consecutiveRefreshFailures > 0 || refreshIntervalMs != baseRefreshIntervalMs) {
+                Log.d(TAG, "Refresh recovered. Resetting Trakt poll interval to ${baseRefreshIntervalMs}ms")
+            }
+            consecutiveRefreshFailures = 0
+            refreshIntervalMs = baseRefreshIntervalMs
+            return
+        }
+
+        consecutiveRefreshFailures += 1
+        val nextInterval = (baseRefreshIntervalMs shl (consecutiveRefreshFailures - 1))
+            .coerceAtMost(maxRefreshIntervalMs)
+        if (nextInterval != refreshIntervalMs) {
+            Log.w(
+                TAG,
+                "Refresh failed $consecutiveRefreshFailures time(s). Backing off Trakt poll interval to ${nextInterval}ms"
+            )
+        }
+        refreshIntervalMs = nextInterval
     }
 
     private suspend fun refreshRemoteSnapshot() {
