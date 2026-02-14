@@ -113,12 +113,10 @@ class PlayerViewModel @Inject constructor(
     }
 
     
-    private val contentId: String? = savedStateHandle.get<String>("contentId")?.let {
-        if (it.isNotEmpty()) URLDecoder.decode(it, "UTF-8") else null
-    }
-    private val contentType: String? = savedStateHandle.get<String>("contentType")?.let {
-        if (it.isNotEmpty()) URLDecoder.decode(it, "UTF-8") else null
-    }
+    // Navigation args are already decoded by NavController.
+    // Decoding again breaks encoded IDs (e.g. addon IDs containing %3A/%2F segments).
+    private val contentId: String? = savedStateHandle.get<String>("contentId")?.takeIf { it.isNotEmpty() }
+    private val contentType: String? = savedStateHandle.get<String>("contentType")?.takeIf { it.isNotEmpty() }
     private val contentName: String? = savedStateHandle.get<String>("contentName")?.let {
         if (it.isNotEmpty()) URLDecoder.decode(it, "UTF-8") else null
     }
@@ -131,9 +129,7 @@ class PlayerViewModel @Inject constructor(
     private val logo: String? = savedStateHandle.get<String>("logo")?.let {
         if (it.isNotEmpty()) URLDecoder.decode(it, "UTF-8") else null
     }
-    private val videoId: String? = savedStateHandle.get<String>("videoId")?.let {
-        if (it.isNotEmpty()) URLDecoder.decode(it, "UTF-8") else null
-    }
+    private val videoId: String? = savedStateHandle.get<String>("videoId")?.takeIf { it.isNotEmpty() }
     private val initialSeason: Int? = savedStateHandle.get<String>("season")?.toIntOrNull()
     private val initialEpisode: Int? = savedStateHandle.get<String>("episode")?.toIntOrNull()
     private val initialEpisodeTitle: String? = savedStateHandle.get<String>("episodeTitle")?.let {

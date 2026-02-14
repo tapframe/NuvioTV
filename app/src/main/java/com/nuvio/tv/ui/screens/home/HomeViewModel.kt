@@ -470,6 +470,10 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             catalogLoadSemaphore.withPermit {
                 val supportsSkip = catalog.extra.any { it.name == "skip" }
+                Log.d(
+                    TAG,
+                    "Loading home catalog addonId=${addon.id} addonName=${addon.name} type=${catalog.apiType} catalogId=${catalog.id} catalogName=${catalog.name} supportsSkip=$supportsSkip"
+                )
                 catalogRepository.getCatalog(
                     addonBaseUrl = addon.baseUrl,
                     addonId = addon.id,
@@ -488,10 +492,17 @@ class HomeViewModel @Inject constructor(
                                 catalogId = catalog.id
                             )
                             catalogsMap[key] = result.data
+                            Log.d(
+                                TAG,
+                                "Home catalog loaded addonId=${addon.id} type=${catalog.apiType} catalogId=${catalog.id} items=${result.data.items.size}"
+                            )
                             scheduleUpdateCatalogRows()
                         }
                         is NetworkResult.Error -> {
-                            // Log error but don't fail entire screen
+                            Log.w(
+                                TAG,
+                                "Home catalog failed addonId=${addon.id} type=${catalog.apiType} catalogId=${catalog.id} code=${result.code} message=${result.message}"
+                            )
                         }
                         NetworkResult.Loading -> { /* Handled by individual row */ }
                     }

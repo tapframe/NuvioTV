@@ -24,7 +24,6 @@ enum class ContentType {
         TV -> "tv"
         UNKNOWN -> fallbackType
             ?.trim()
-            ?.lowercase()
             ?.takeIf { it.isNotEmpty() }
             ?: "movie"
     }

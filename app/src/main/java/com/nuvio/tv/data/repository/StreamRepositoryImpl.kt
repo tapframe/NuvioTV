@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import java.net.URLEncoder
 import javax.inject.Inject
 
 private const val TAG = "StreamRepositoryImpl"
@@ -244,7 +245,10 @@ class StreamRepositoryImpl @Inject constructor(
         videoId: String
     ): NetworkResult<List<Stream>> {
         val cleanBaseUrl = baseUrl.trimEnd('/')
-        val streamUrl = "$cleanBaseUrl/stream/$type/$videoId.json"
+        val encodedType = encodePathSegment(type)
+        val encodedVideoId = encodePathSegment(videoId)
+        val streamUrl = "$cleanBaseUrl/stream/$encodedType/$encodedVideoId.json"
+        Log.d(TAG, "Fetching streams type=$type videoId=$videoId url=$streamUrl")
 
         // First, get addon info for name and logo
         val addonResult = addonRepository.fetchAddon(baseUrl)
@@ -262,9 +266,16 @@ class StreamRepositoryImpl @Inject constructor(
                 val streams = result.data.streams?.map { 
                     it.toDomain(addonName, addonLogo) 
                 } ?: emptyList()
+                Log.d(TAG, "Streams success addon=$addonName count=${streams.size} url=$streamUrl")
                 NetworkResult.Success(streams)
             }
-            is NetworkResult.Error -> result
+            is NetworkResult.Error -> {
+                Log.w(
+                    TAG,
+                    "Streams failed addon=$addonName code=${result.code} message=${result.message} url=$streamUrl"
+                )
+                result
+            }
             NetworkResult.Loading -> NetworkResult.Loading
         }
     }
@@ -277,5 +288,9 @@ class StreamRepositoryImpl @Inject constructor(
             resource.name == "stream" && 
             (resource.types.isEmpty() || resource.types.contains(type))
         }
+    }
+
+    private fun encodePathSegment(value: String): String {
+        return URLEncoder.encode(value, "UTF-8").replace("+", "%20")
     }
 }

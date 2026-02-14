@@ -1,5 +1,6 @@
 package com.nuvio.tv.data.repository
 
+import android.util.Log
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.network.safeApiCall
 import com.nuvio.tv.data.mapper.toDomain
@@ -15,6 +16,9 @@ import javax.inject.Inject
 class CatalogRepositoryImpl @Inject constructor(
     private val api: AddonApi
 ) : CatalogRepository {
+    companion object {
+        private const val TAG = "CatalogRepository"
+    }
 
     override fun getCatalog(
         addonBaseUrl: String,
@@ -30,10 +34,18 @@ class CatalogRepositoryImpl @Inject constructor(
         emit(NetworkResult.Loading)
 
         val url = buildCatalogUrl(addonBaseUrl, type, catalogId, skip, extraArgs)
+        Log.d(
+            TAG,
+            "Fetching catalog addonId=$addonId addonName=$addonName type=$type catalogId=$catalogId skip=$skip supportsSkip=$supportsSkip url=$url"
+        )
 
         when (val result = safeApiCall { api.getCatalog(url) }) {
             is NetworkResult.Success -> {
                 val items = result.data.metas.map { it.toDomain() }
+                Log.d(
+                    TAG,
+                    "Catalog fetch success addonId=$addonId type=$type catalogId=$catalogId items=${items.size}"
+                )
                 
                 val catalogRow = CatalogRow(
                     addonId = addonId,
@@ -51,7 +63,13 @@ class CatalogRepositoryImpl @Inject constructor(
                 )
                 emit(NetworkResult.Success(catalogRow))
             }
-            is NetworkResult.Error -> emit(result)
+            is NetworkResult.Error -> {
+                Log.w(
+                    TAG,
+                    "Catalog fetch failed addonId=$addonId type=$type catalogId=$catalogId code=${result.code} message=${result.message} url=$url"
+                )
+                emit(result)
+            }
             NetworkResult.Loading -> { /* Already emitted */ }
         }
     }
