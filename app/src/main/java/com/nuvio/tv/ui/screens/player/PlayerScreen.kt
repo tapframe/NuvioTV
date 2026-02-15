@@ -54,6 +54,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -98,6 +99,7 @@ import com.nuvio.tv.core.player.ExternalPlayerLauncher
 import com.nuvio.tv.ui.components.LoadingIndicator
 import com.nuvio.tv.ui.theme.NuvioColors
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.launch
 
 @Composable
 fun PlayerScreen(
@@ -112,6 +114,7 @@ fun PlayerScreen(
     val streamsFocusRequester = remember { FocusRequester() }
     val sourceStreamsFocusRequester = remember { FocusRequester() }
     val skipIntroFocusRequester = remember { FocusRequester() }
+    val coroutineScope = rememberCoroutineScope()
 
     BackHandler {
         if (uiState.showPauseOverlay) {
@@ -155,23 +158,56 @@ fun PlayerScreen(
     }
 
     // Frame rate matching: switch display refresh rate to match video frame rate
-    // Like Just Player, we pause playback during the switch and resume when the display settles.
+    // Kodi-style: pause playback during the switch and resume after display settles (with timeout fallback).
     val activity = LocalContext.current as? android.app.Activity
-    LaunchedEffect(uiState.detectedFrameRate, uiState.frameRateMatchingEnabled) {
-        if (activity != null && uiState.frameRateMatchingEnabled && uiState.detectedFrameRate > 0f) {
-            val switched = com.nuvio.tv.core.player.FrameRateUtils.matchFrameRate(
+    LaunchedEffect(uiState.detectedFrameRate, uiState.frameRateMatchingMode) {
+        if (activity != null &&
+            uiState.frameRateMatchingMode != com.nuvio.tv.data.local.FrameRateMatchingMode.OFF &&
+            uiState.detectedFrameRate > 0f
+        ) {
+            val wasPlaying = uiState.isPlaying
+            com.nuvio.tv.core.player.FrameRateUtils.matchFrameRate(
                 activity,
                 uiState.detectedFrameRate,
-                onBeforeSwitch = { viewModel.exoPlayer?.pause() },
-                onAfterSwitch = { viewModel.exoPlayer?.play() }
+                onBeforeSwitch = { if (wasPlaying) viewModel.exoPlayer?.pause() },
+                onAfterSwitch = { mode ->
+                    if (wasPlaying) {
+                        coroutineScope.launch {
+                            // Kodi-like delay to let the display settle after a refresh switch.
+                            kotlinx.coroutines.delay(2000)
+                            viewModel.exoPlayer?.play()
+                        }
+                    }
+                    viewModel.onEvent(
+                        PlayerEvent.OnShowDisplayModeInfo(
+                            DisplayModeInfo(
+                                width = mode.physicalWidth,
+                                height = mode.physicalHeight,
+                                refreshRate = mode.refreshRate
+                            )
+                        )
+                    )
+                }
             )
         }
     }
+    LaunchedEffect(uiState.frameRateMatchingMode) {
+        if (activity != null &&
+            uiState.frameRateMatchingMode == com.nuvio.tv.data.local.FrameRateMatchingMode.OFF
+        ) {
+            com.nuvio.tv.core.player.FrameRateUtils.restoreOriginalDisplayMode(activity)
+        }
+    }
     // Restore original display mode when leaving the player
-    DisposableEffect(activity) {
+    DisposableEffect(activity, uiState.frameRateMatchingMode) {
         onDispose {
             if (activity != null) {
-                com.nuvio.tv.core.player.FrameRateUtils.cleanupDisplayListener()
+                if (uiState.frameRateMatchingMode == com.nuvio.tv.data.local.FrameRateMatchingMode.START_STOP) {
+                    com.nuvio.tv.core.player.FrameRateUtils.restoreOriginalDisplayMode(activity)
+                } else {
+                    com.nuvio.tv.core.player.FrameRateUtils.cleanupDisplayListener()
+                    com.nuvio.tv.core.player.FrameRateUtils.clearOriginalDisplayMode()
+                }
             }
         }
     }
@@ -460,7 +496,21 @@ fun PlayerScreen(
             onAnimationComplete = {
                 viewModel.onEvent(PlayerEvent.OnParentalGuideHide)
             },
-            modifier = Modifier.align(Alignment.TopStart)
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .zIndex(2.2f)
+        )
+
+        // Display mode overlay (shows when refresh rate switches)
+        DisplayModeOverlay(
+            info = uiState.displayModeInfo,
+            isVisible = uiState.showDisplayModeInfo,
+            onAnimationComplete = {
+                viewModel.onEvent(PlayerEvent.OnHideDisplayModeInfo)
+            },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .zIndex(2.2f)
         )
 
         // Controls overlay

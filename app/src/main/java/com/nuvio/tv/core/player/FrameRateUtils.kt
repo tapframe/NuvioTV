@@ -6,33 +6,77 @@ import android.hardware.display.DisplayManager
 import android.media.MediaExtractor
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.Display
 import android.view.WindowManager
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * Auto frame rate matching utility.
  * Switches the display refresh rate to match the video frame rate for judder-free playback.
- * Inspired by Just (Video) Player's implementation, including DisplayManager listener
- * coordination to pause playback during the mode switch and resume once the display settles.
+ * Inspired by Kodi's Android implementation (SetRefreshRate/SetDisplayMode) and Just (Video) Player:
+ * - DisplayManager listener + timeout to resume playback even if no display-changed callback fires.
+ * - Capture/restore original display mode when leaving playback.
  */
 object FrameRateUtils {
 
     private const val TAG = "FrameRateUtils"
+    private const val SWITCH_TIMEOUT_MS = 5000L
+    private const val MULTIPLE_TOLERANCE = 0.02f
 
     /** Active display listener (for cleanup). */
     private var displayManager: DisplayManager? = null
     private var displayListener: DisplayManager.DisplayListener? = null
+    private var timeoutHandler: Handler? = null
+    private var timeoutRunnable: Runnable? = null
+    private var pendingAfterSwitch: ((Display.Mode) -> Unit)? = null
+    private var pendingDisplayId: Int? = null
+    private var pendingMode: Display.Mode? = null
+    private var originalModeId: Int? = null
 
     /**
      * Normalize a refresh rate to an integer × 100 for safe floating-point comparison.
      */
     private fun normRate(rate: Float): Int = (rate * 100f).toInt()
 
+    private data class ModeCandidate(
+        val mode: Display.Mode,
+        val multiple: Int,
+        val multipleError: Float
+    )
+
+    private fun completeSwitch(reason: String) {
+        Log.d(TAG, "Display mode switch completed ($reason)")
+        val callback = pendingAfterSwitch
+        val mode = pendingMode
+        cleanupDisplayListener()
+        if (callback != null && mode != null) {
+            callback(mode)
+        }
+    }
+
+    private fun scheduleSwitchTimeout() {
+        timeoutHandler = Handler(Looper.getMainLooper())
+        timeoutRunnable = Runnable {
+            Log.w(TAG, "Display mode switch timeout after ${SWITCH_TIMEOUT_MS}ms")
+            completeSwitch("timeout")
+        }
+        timeoutHandler?.postDelayed(timeoutRunnable!!, SWITCH_TIMEOUT_MS)
+    }
+
+    private fun recordOriginalMode(display: Display) {
+        if (originalModeId == null) {
+            originalModeId = display.mode.modeId
+        }
+    }
+
     /**
      * Attempt to match the display refresh rate to the video [frameRate].
      *
-     * Like Just (Video) Player, this method coordinates with playback:
+     * Kodi-style coordination with playback:
      * - [onBeforeSwitch] is invoked right before the mode switch is applied (caller should pause the player).
      * - [onAfterSwitch] is invoked once the display has actually changed (caller should resume playback).
      * - If no switch is needed, neither callback is invoked.
@@ -41,14 +85,15 @@ object FrameRateUtils {
      * @param activity The current Activity (needed for window attributes).
      * @param frameRate The detected video frame rate (e.g. 23.976, 24, 25, 29.97, 30, 50, 59.94).
      * @param onBeforeSwitch Called on the main thread right before the mode switch. Pause the player here.
-     * @param onAfterSwitch Called on the main thread when the display change completes (or times out). Resume here.
+     * @param onAfterSwitch Called on the main thread when the display change completes (or times out).
+     *                      Provides the target [Display.Mode].
      * @return `true` if a mode switch was requested, `false` if not needed or unavailable.
      */
     fun matchFrameRate(
         activity: Activity,
         frameRate: Float,
         onBeforeSwitch: (() -> Unit)? = null,
-        onAfterSwitch: (() -> Unit)? = null
+        onAfterSwitch: ((Display.Mode) -> Unit)? = null
     ): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
         if (frameRate <= 0f) return false
@@ -69,28 +114,26 @@ object FrameRateUtils {
 
             if (sameSizeModes.size <= 1) return false
 
-            // Among same-size modes, find ones with refresh rate >= video FPS
-            val modesHigh = sameSizeModes.filter {
-                normRate(it.refreshRate) >= normRate(frameRate)
-            }
-
             // Track the highest refresh rate mode at same resolution
             val modeTop = sameSizeModes.maxByOrNull { normRate(it.refreshRate) } ?: activeMode
 
-            // Find the best mode — one whose refresh rate is an exact integer multiple of the video FPS
-            var modeBest: Display.Mode? = null
-            for (mode in modesHigh) {
-                if (normRate(mode.refreshRate) % normRate(frameRate) == 0) {
-                    if (modeBest == null || normRate(mode.refreshRate) > normRate(modeBest.refreshRate)) {
-                        modeBest = mode
-                    }
-                }
+            // Find the best mode - prefer close integer multiples of the video FPS.
+            val candidates = sameSizeModes.map { mode ->
+                val ratio = mode.refreshRate / frameRate
+                val multiple = ratio.roundToInt().coerceAtLeast(1)
+                val error = abs(ratio - multiple.toFloat())
+                ModeCandidate(mode, multiple, error)
             }
 
-            // Fallback to highest available if no exact multiple found
-            if (modeBest == null) {
-                modeBest = modeTop
-            }
+            val modeBest = candidates
+                .filter { it.multipleError <= MULTIPLE_TOLERANCE }
+                .sortedWith(
+                    compareBy<ModeCandidate> { it.multiple }
+                        .thenBy { it.multipleError }
+                )
+                .firstOrNull()
+                ?.mode
+                ?: modeTop
 
             val switchNeeded = modeBest.modeId != activeMode.modeId
             if (switchNeeded) {
@@ -99,20 +142,32 @@ object FrameRateUtils {
 
                 // Clean up any previous listener
                 cleanupDisplayListener()
+                recordOriginalMode(display)
 
+                var completeImmediately = false
                 // Register DisplayManager listener to know when the TV has finished switching
                 if (onAfterSwitch != null) {
+                    pendingAfterSwitch = onAfterSwitch
+                    pendingMode = modeBest
+                    pendingDisplayId = display.displayId
                     displayManager = activity.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager
                     displayListener = object : DisplayManager.DisplayListener {
                         override fun onDisplayAdded(displayId: Int) {}
                         override fun onDisplayRemoved(displayId: Int) {}
                         override fun onDisplayChanged(displayId: Int) {
-                            Log.d(TAG, "Display mode switch completed")
-                            cleanupDisplayListener()
-                            onAfterSwitch()
+                            if (displayId != pendingDisplayId) return
+                            completeSwitch("displayChanged")
                         }
                     }
-                    displayManager?.registerDisplayListener(displayListener, null)
+                    if (displayManager != null) {
+                        displayManager?.registerDisplayListener(
+                            displayListener,
+                            Handler(Looper.getMainLooper())
+                        )
+                        scheduleSwitchTimeout()
+                    } else {
+                        completeImmediately = true
+                    }
                 }
 
                 // Notify caller to pause playback before the switch
@@ -122,6 +177,9 @@ object FrameRateUtils {
                 val layoutParams = window.attributes
                 layoutParams.preferredDisplayModeId = modeBest.modeId
                 window.attributes = layoutParams
+                if (completeImmediately) {
+                    completeSwitch("noDisplayManager")
+                }
             } else {
                 Log.d(TAG, "Display already at optimal rate ${activeMode.refreshRate}Hz for ${frameRate}fps")
             }
@@ -129,6 +187,9 @@ object FrameRateUtils {
             return switchNeeded
         } catch (e: Exception) {
             Log.e(TAG, "Failed to match frame rate", e)
+            if (pendingAfterSwitch != null) {
+                completeSwitch("error")
+            }
             return false
         }
     }
@@ -138,9 +199,51 @@ object FrameRateUtils {
      * Safe to call multiple times.
      */
     fun cleanupDisplayListener() {
+        timeoutRunnable?.let { timeoutHandler?.removeCallbacks(it) }
+        timeoutRunnable = null
+        timeoutHandler = null
         displayListener?.let { displayManager?.unregisterDisplayListener(it) }
         displayListener = null
         displayManager = null
+        pendingAfterSwitch = null
+        pendingDisplayId = null
+        pendingMode = null
+    }
+
+    /**
+     * Clear any stored original display mode without restoring.
+     * Useful for "start only" mode where we don't revert on exit.
+     */
+    fun clearOriginalDisplayMode() {
+        originalModeId = null
+    }
+
+    /**
+     * Restore the original display mode captured before the first switch.
+     * Kodi-style: reset display preferences on exit.
+     */
+    fun restoreOriginalDisplayMode(activity: Activity): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
+        val targetModeId = originalModeId ?: return false
+
+        return try {
+            val window = activity.window ?: return false
+            val display = window.decorView.display ?: return false
+            if (display.mode.modeId == targetModeId) {
+                originalModeId = null
+                true
+            } else {
+                cleanupDisplayListener()
+                val layoutParams = window.attributes
+                layoutParams.preferredDisplayModeId = targetModeId
+                window.attributes = layoutParams
+                originalModeId = null
+                true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to restore display mode", e)
+            false
+        }
     }
 
     /**

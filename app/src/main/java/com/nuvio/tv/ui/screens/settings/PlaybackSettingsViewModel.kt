@@ -3,6 +3,7 @@ package com.nuvio.tv.ui.screens.settings
 import androidx.lifecycle.ViewModel
 import com.nuvio.tv.core.plugin.PluginManager
 import com.nuvio.tv.data.local.LibassRenderType
+import com.nuvio.tv.data.local.FrameRateMatchingMode
 import com.nuvio.tv.data.local.PlayerSettings
 import com.nuvio.tv.data.local.PlayerSettingsDataStore
 import com.nuvio.tv.data.local.PlayerPreference
@@ -91,8 +92,8 @@ class PlaybackSettingsViewModel @Inject constructor(
         playerSettingsDataStore.setSkipIntroEnabled(enabled)
     }
 
-    suspend fun setFrameRateMatching(enabled: Boolean) {
-        playerSettingsDataStore.setFrameRateMatching(enabled)
+    suspend fun setFrameRateMatchingMode(mode: FrameRateMatchingMode) {
+        playerSettingsDataStore.setFrameRateMatchingMode(mode)
     }
 
     suspend fun setMapDV7ToHevc(enabled: Boolean) {

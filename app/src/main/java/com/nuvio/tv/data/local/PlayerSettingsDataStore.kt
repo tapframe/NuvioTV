@@ -134,7 +134,7 @@ data class PlayerSettings(
     // Dolby Vision Profile 7 → HEVC fallback (requires forked ExoPlayer)
     val mapDV7ToHevc: Boolean = false,
     // Display settings
-    val frameRateMatching: Boolean = false,
+    val frameRateMatchingMode: FrameRateMatchingMode = FrameRateMatchingMode.OFF,
     // Stream selection settings
     val streamAutoPlayMode: StreamAutoPlayMode = StreamAutoPlayMode.MANUAL,
     val streamAutoPlaySource: StreamAutoPlaySource = StreamAutoPlaySource.ALL_SOURCES,
@@ -157,6 +157,10 @@ enum class StreamAutoPlaySource {
     ENABLED_PLUGINS_ONLY
 }
 
+enum class FrameRateMatchingMode {
+    OFF,
+    START,
+    START_STOP
 enum class PlayerPreference {
     INTERNAL,
     EXTERNAL,
@@ -199,6 +203,7 @@ class PlayerSettingsDataStore @Inject constructor(
     private val skipIntroEnabledKey = booleanPreferencesKey("skip_intro_enabled")
     private val mapDV7ToHevcKey = booleanPreferencesKey("map_dv7_to_hevc")
     private val frameRateMatchingKey = booleanPreferencesKey("frame_rate_matching")
+    private val frameRateMatchingModeKey = stringPreferencesKey("frame_rate_matching_mode")
     private val streamAutoPlayModeKey = stringPreferencesKey("stream_auto_play_mode")
     private val streamAutoPlaySourceKey = stringPreferencesKey("stream_auto_play_source")
     private val streamAutoPlaySelectedAddonsKey = stringSetPreferencesKey("stream_auto_play_selected_addons")
@@ -278,7 +283,13 @@ class PlayerSettingsDataStore @Inject constructor(
             pauseOverlayEnabled = prefs[pauseOverlayEnabledKey] ?: true,
             skipIntroEnabled = prefs[skipIntroEnabledKey] ?: true,
             mapDV7ToHevc = prefs[mapDV7ToHevcKey] ?: false,
-            frameRateMatching = prefs[frameRateMatchingKey] ?: false,
+            frameRateMatchingMode = prefs[frameRateMatchingModeKey]?.let {
+                runCatching { FrameRateMatchingMode.valueOf(it) }.getOrNull()
+            } ?: if (prefs[frameRateMatchingKey] == true) {
+                FrameRateMatchingMode.START_STOP
+            } else {
+                FrameRateMatchingMode.OFF
+            },
             streamAutoPlayMode = prefs[streamAutoPlayModeKey]?.let {
                 runCatching { StreamAutoPlayMode.valueOf(it) }.getOrDefault(StreamAutoPlayMode.MANUAL)
             } ?: StreamAutoPlayMode.MANUAL,
@@ -382,9 +393,10 @@ class PlayerSettingsDataStore @Inject constructor(
         }
     }
 
-    suspend fun setFrameRateMatching(enabled: Boolean) {
+    suspend fun setFrameRateMatchingMode(mode: FrameRateMatchingMode) {
         dataStore.edit { prefs ->
-            prefs[frameRateMatchingKey] = enabled
+            prefs[frameRateMatchingModeKey] = mode.name
+            prefs[frameRateMatchingKey] = mode != FrameRateMatchingMode.OFF
         }
     }
 
