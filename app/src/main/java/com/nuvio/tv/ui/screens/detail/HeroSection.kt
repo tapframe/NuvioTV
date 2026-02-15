@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -30,11 +31,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
@@ -84,6 +89,7 @@ fun HeroContentSection(
 ) {
     var isDescriptionExpanded by remember(meta.id) { mutableStateOf(false) }
     var descriptionHasOverflow by remember(meta.id) { mutableStateOf(false) }
+    var isShowMoreFocused by remember { mutableStateOf(false) }
 
     // Animate logo properties for trailer mode
     val logoHeight by animateDpAsState(
@@ -216,7 +222,11 @@ fun HeroContentSection(
                     val directorLine = meta.director.takeIf { it.isNotEmpty() }?.joinToString(", ")
                     val writerLine = meta.writer.takeIf { it.isNotEmpty() }?.joinToString(", ")
                     val creditLine = if (!directorLine.isNullOrBlank()) {
-                        "Director: $directorLine"
+                        if (meta.apiType in listOf("series", "tv")) {
+                            "Creator: $directorLine"
+                        } else {
+                            "Director: $directorLine"
+                        }
                     } else if (!writerLine.isNullOrBlank()) {
                         "Writer: $writerLine"
                     } else {
@@ -253,32 +263,44 @@ fun HeroContentSection(
                                 .padding(bottom = 12.dp)
                         )
 
+                        val showMoreFocusRing = NuvioColors.FocusRing
+                        val showMoreFocusBg = NuvioColors.FocusBackground
+
                         if (descriptionHasOverflow || isDescriptionExpanded) {
-                            Button(
-                                onClick = { isDescriptionExpanded = !isDescriptionExpanded },
+                            Text(
+                                text = if (isDescriptionExpanded) "Show less" else "Show more",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isShowMoreFocused) NuvioColors.TextPrimary else NuvioColors.TextTertiary,
                                 modifier = Modifier
-                                    .height(34.dp)
-                                    .padding(bottom = 12.dp),
-                                colors = ButtonDefaults.colors(
-                                    containerColor = NuvioColors.BackgroundElevated,
-                                    focusedContainerColor = NuvioColors.FocusBackground,
-                                    contentColor = NuvioColors.TextPrimary,
-                                    focusedContentColor = NuvioColors.TextPrimary
-                                ),
-                                shape = ButtonDefaults.shape(shape = RoundedCornerShape(20.dp)),
-                                border = ButtonDefaults.border(
-                                    focusedBorder = Border(
-                                        border = BorderStroke(2.dp, NuvioColors.FocusRing),
-                                        shape = RoundedCornerShape(20.dp)
-                                    )
-                                ),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
-                            ) {
-                                Text(
-                                    text = if (isDescriptionExpanded) "Show less" else "Show more",
-                                    style = MaterialTheme.typography.labelMedium
-                                )
-                            }
+                                    .padding(bottom = 12.dp)
+                                    .drawBehind {
+                                        if (isShowMoreFocused) {
+                                            val insetX = 8.dp.toPx()
+                                            val insetY = 2.dp.toPx()
+                                            val radius = 6.dp.toPx()
+                                            val stroke = 2.dp.toPx()
+                                            val topLeft = Offset(-insetX, -insetY)
+                                            val size = Size(size.width + insetX * 2, size.height + insetY * 2)
+
+                                            drawRoundRect(
+                                                color = showMoreFocusBg.copy(alpha = 0.35f),
+                                                topLeft = topLeft,
+                                                size = size,
+                                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius)
+                                            )
+                                            drawRoundRect(
+                                                color = showMoreFocusRing,
+                                                topLeft = topLeft,
+                                                size = size,
+                                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius),
+                                                style = Stroke(width = stroke)
+                                            )
+                                        }
+                                    }
+                                    .focusProperties { canFocus = true }
+                                    .onFocusChanged { focusState -> isShowMoreFocused = focusState.hasFocus }
+                                    .clickable { isDescriptionExpanded = !isDescriptionExpanded }
+                            )
                         }
                     }
 

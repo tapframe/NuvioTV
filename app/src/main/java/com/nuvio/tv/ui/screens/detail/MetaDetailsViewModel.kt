@@ -174,10 +174,12 @@ class MetaDetailsViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
 
+            val metaLookupId = resolveMetaLookupId(itemId = itemId, itemType = itemType)
+
             // 1) Prefer meta from the originating addon (same catalog source)
             val preferred = preferredAddonBaseUrl?.takeIf { it.isNotBlank() }
             val preferredMeta: Meta? = preferred?.let { baseUrl ->
-                when (val result = metaRepository.getMeta(addonBaseUrl = baseUrl, type = itemType, id = itemId)
+                when (val result = metaRepository.getMeta(addonBaseUrl = baseUrl, type = itemType, id = metaLookupId)
                     .first { it !is NetworkResult.Loading }) {
                     is NetworkResult.Success -> result.data
                     is NetworkResult.Error -> null
@@ -191,7 +193,7 @@ class MetaDetailsViewModel @Inject constructor(
             }
 
             // 2) Fallback: first addon that can provide meta (often Cinemeta)
-            metaRepository.getMetaFromAllAddons(type = itemType, id = itemId).collect { result ->
+            metaRepository.getMetaFromAllAddons(type = itemType, id = metaLookupId).collect { result ->
                 when (result) {
                     is NetworkResult.Success -> applyMetaWithEnrichment(result.data)
                     is NetworkResult.Error -> {
@@ -203,6 +205,19 @@ class MetaDetailsViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private suspend fun resolveMetaLookupId(itemId: String, itemType: String): String {
+        val raw = itemId.trim()
+        if (!raw.startsWith("tmdb:", ignoreCase = true)) return raw
+
+        val tmdbNumericId = raw
+            .substringAfter(':', missingDelimiterValue = "")
+            .substringBefore(':')
+            .toIntOrNull()
+            ?: return raw
+
+        return tmdbService.tmdbToImdb(tmdbNumericId, itemType) ?: raw
     }
 
     private fun applyMeta(meta: Meta) {
@@ -286,10 +301,18 @@ class MetaDetailsViewModel @Inject constructor(
 
         // Group: Credits (cast with photos, director, writer)
         if (enrichment != null && settings.useCredits) {
-            if (enrichment.castMembers.isNotEmpty()) {
+            val peopleCredits = buildList {
+                addAll(enrichment.directorMembers)
+                addAll(enrichment.writerMembers)
+                addAll(enrichment.castMembers)
+            }
+                .filter { it.name.isNotBlank() }
+                .distinctBy { it.tmdbId ?: (it.name.lowercase() + "|" + (it.character ?: "")) }
+
+            if (peopleCredits.isNotEmpty()) {
                 updated = updated.copy(
-                    castMembers = enrichment.castMembers,
-                    cast = enrichment.castMembers.map { it.name }
+                    castMembers = peopleCredits,
+                    cast = enrichment.castMembers.takeIf { it.isNotEmpty() }?.map { it.name } ?: updated.cast
                 )
             }
             updated = updated.copy(

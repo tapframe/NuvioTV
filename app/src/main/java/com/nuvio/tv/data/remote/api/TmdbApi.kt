@@ -77,6 +77,20 @@ interface TmdbApi {
         @Query("api_key") apiKey: String,
         @Query("language") language: String? = null
     ): Response<TmdbSeasonResponse>
+
+    @GET("person/{person_id}")
+    suspend fun getPersonDetails(
+        @Path("person_id") personId: Int,
+        @Query("api_key") apiKey: String,
+        @Query("language") language: String? = null
+    ): Response<TmdbPersonResponse>
+
+    @GET("person/{person_id}/combined_credits")
+    suspend fun getPersonCombinedCredits(
+        @Path("person_id") personId: Int,
+        @Query("api_key") apiKey: String,
+        @Query("language") language: String? = null
+    ): Response<TmdbPersonCreditsResponse>
 }
 
 @JsonClass(generateAdapter = true)
@@ -109,6 +123,7 @@ data class TmdbDetailsResponse(
     @Json(name = "name") val name: String? = null,
     @Json(name = "overview") val overview: String? = null,
     @Json(name = "genres") val genres: List<TmdbGenre>? = null,
+    @Json(name = "created_by") val createdBy: List<TmdbCreatedBy>? = null,
     @Json(name = "release_date") val releaseDate: String? = null,
     @Json(name = "first_air_date") val firstAirDate: String? = null,
     @Json(name = "runtime") val runtime: Int? = null,
@@ -121,6 +136,13 @@ data class TmdbDetailsResponse(
     @Json(name = "original_language") val originalLanguage: String? = null,
     @Json(name = "backdrop_path") val backdropPath: String? = null,
     @Json(name = "poster_path") val posterPath: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbCreatedBy(
+    @Json(name = "id") val id: Int? = null,
+    @Json(name = "name") val name: String? = null,
+    @Json(name = "profile_path") val profilePath: String? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -149,6 +171,7 @@ data class TmdbCreditsResponse(
 
 @JsonClass(generateAdapter = true)
 data class TmdbCastMember(
+    @Json(name = "id") val id: Int? = null,
     @Json(name = "name") val name: String? = null,
     @Json(name = "character") val character: String? = null,
     @Json(name = "profile_path") val profilePath: String? = null
@@ -156,9 +179,11 @@ data class TmdbCastMember(
 
 @JsonClass(generateAdapter = true)
 data class TmdbCrewMember(
+    @Json(name = "id") val id: Int? = null,
     @Json(name = "name") val name: String? = null,
     @Json(name = "job") val job: String? = null,
-    @Json(name = "department") val department: String? = null
+    @Json(name = "department") val department: String? = null,
+    @Json(name = "profile_path") val profilePath: String? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -192,4 +217,58 @@ data class TmdbEpisode(
     @Json(name = "still_path") val stillPath: String? = null,
     @Json(name = "air_date") val airDate: String? = null,
     @Json(name = "runtime") val runtime: Int? = null
+)
+
+// ── Person / Cast Detail DTOs ──
+
+@JsonClass(generateAdapter = true)
+data class TmdbPersonResponse(
+    @Json(name = "id") val id: Int,
+    @Json(name = "name") val name: String? = null,
+    @Json(name = "biography") val biography: String? = null,
+    @Json(name = "birthday") val birthday: String? = null,
+    @Json(name = "deathday") val deathday: String? = null,
+    @Json(name = "place_of_birth") val placeOfBirth: String? = null,
+    @Json(name = "profile_path") val profilePath: String? = null,
+    @Json(name = "known_for_department") val knownForDepartment: String? = null,
+    @Json(name = "also_known_as") val alsoKnownAs: List<String>? = null,
+    @Json(name = "imdb_id") val imdbId: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbPersonCreditsResponse(
+    @Json(name = "cast") val cast: List<TmdbPersonCreditCast>? = null,
+    @Json(name = "crew") val crew: List<TmdbPersonCreditCrew>? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbPersonCreditCast(
+    @Json(name = "id") val id: Int,
+    @Json(name = "title") val title: String? = null,
+    @Json(name = "name") val name: String? = null,
+    @Json(name = "media_type") val mediaType: String? = null,
+    @Json(name = "poster_path") val posterPath: String? = null,
+    @Json(name = "backdrop_path") val backdropPath: String? = null,
+    @Json(name = "release_date") val releaseDate: String? = null,
+    @Json(name = "first_air_date") val firstAirDate: String? = null,
+    @Json(name = "character") val character: String? = null,
+    @Json(name = "vote_average") val voteAverage: Double? = null,
+    @Json(name = "overview") val overview: String? = null,
+    @Json(name = "genre_ids") val genreIds: List<Int>? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbPersonCreditCrew(
+    @Json(name = "id") val id: Int,
+    @Json(name = "title") val title: String? = null,
+    @Json(name = "name") val name: String? = null,
+    @Json(name = "media_type") val mediaType: String? = null,
+    @Json(name = "poster_path") val posterPath: String? = null,
+    @Json(name = "backdrop_path") val backdropPath: String? = null,
+    @Json(name = "release_date") val releaseDate: String? = null,
+    @Json(name = "first_air_date") val firstAirDate: String? = null,
+    @Json(name = "job") val job: String? = null,
+    @Json(name = "vote_average") val voteAverage: Double? = null,
+    @Json(name = "overview") val overview: String? = null,
+    @Json(name = "genre_ids") val genreIds: List<Int>? = null
 )

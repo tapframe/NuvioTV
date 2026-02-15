@@ -117,4 +117,13 @@ sealed class Screen(val route: String) {
             return "catalog_see_all/${encode(catalogId)}/${encode(addonId)}/${encode(type)}"
         }
     }
+
+    data object CastDetail : Screen("cast_detail/{personId}/{personName}") {
+        private fun encode(value: String): String =
+            URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+
+        fun createRoute(personId: Int, personName: String): String {
+            return "cast_detail/$personId/${encode(personName)}"
+        }
+    }
 }

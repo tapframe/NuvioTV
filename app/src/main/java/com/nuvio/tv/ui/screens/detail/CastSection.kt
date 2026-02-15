@@ -1,5 +1,6 @@
 package com.nuvio.tv.ui.screens.detail
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,15 +9,21 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyRow
@@ -38,9 +45,17 @@ import com.nuvio.tv.ui.theme.NuvioColors
 @Composable
 fun CastSection(
     cast: List<MetaCastMember>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    title: String = "Cast",
+    leadingCast: List<MetaCastMember> = emptyList(),
+    preferredFocusedCastTmdbId: Int? = null,
+    onCastMemberClick: (MetaCastMember) -> Unit = {}
 ) {
-    if (cast.isEmpty()) return
+    if (cast.isEmpty() && leadingCast.isEmpty()) return
+
+    val itemWidth = 150.dp
+    val cardSize = 100.dp
+    val dividerOffset = itemWidth - cardSize
 
     Column(
         modifier = modifier
@@ -48,7 +63,7 @@ fun CastSection(
             .padding(top = 20.dp, bottom = 8.dp)
     ) {
         Text(
-            text = "Cast",
+            text = title,
             style = MaterialTheme.typography.titleLarge,
             color = NuvioColors.TextPrimary,
             modifier = Modifier.padding(horizontal = 48.dp)
@@ -59,15 +74,82 @@ fun CastSection(
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(horizontal = 48.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.Start
         ) {
+            val standardGap = 8.dp
+            val deadSpace = itemWidth - cardSize
+
+            if (leadingCast.isNotEmpty()) {
+                items(
+                    items = leadingCast,
+                    key = { member ->
+                        "leading|" + (member.tmdbId?.toString() ?: member.name) + "|" + (member.character ?: "") + "|" + (member.photo ?: "")
+                    }
+                ) { member ->
+                    val isLastLeading = member == leadingCast.last()
+                    val endPadding = if (isLastLeading && cast.isNotEmpty()) 0.dp else standardGap
+                    val focusRequester = remember(member.tmdbId, member.name, member.photo, member.character) { FocusRequester() }
+                    val shouldRestoreFocus = preferredFocusedCastTmdbId != null && member.tmdbId == preferredFocusedCastTmdbId
+
+                    LaunchedEffect(shouldRestoreFocus) {
+                        if (shouldRestoreFocus) {
+                            focusRequester.requestFocus()
+                        }
+                    }
+
+                    Box(modifier = Modifier.padding(end = endPadding)) {
+                        CastMemberItem(
+                            member = member,
+                            modifier = Modifier.focusRequester(focusRequester),
+                            itemWidth = itemWidth,
+                            cardSize = cardSize,
+                            onClick = { onCastMemberClick(member) }
+                        )
+                    }
+                }
+            }
+
+            if (leadingCast.isNotEmpty() && cast.isNotEmpty()) {
+                item(key = "role_divider") {
+                    Box(
+                        modifier = Modifier.height(cardSize),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(1.dp)
+                                .height(72.dp)
+                                .offset(x = -deadSpace / 2)
+                                .background(NuvioColors.SurfaceVariant.copy(alpha = 0.9f))
+                        )
+                    }
+                }
+            }
+
             items(
                 items = cast,
                 key = { member ->
-                    member.name + "|" + (member.character ?: "") + "|" + (member.photo ?: "")
+                    (member.tmdbId?.toString() ?: member.name) + "|" + (member.character ?: "") + "|" + (member.photo ?: "")
                 }
             ) { member ->
-                CastMemberItem(member = member)
+                val focusRequester = remember(member.tmdbId, member.name, member.photo, member.character) { FocusRequester() }
+                val shouldRestoreFocus = preferredFocusedCastTmdbId != null && member.tmdbId == preferredFocusedCastTmdbId
+
+                LaunchedEffect(shouldRestoreFocus) {
+                    if (shouldRestoreFocus) {
+                        focusRequester.requestFocus()
+                    }
+                }
+
+                Box(modifier = Modifier.padding(end = standardGap)) {
+                    CastMemberItem(
+                        member = member,
+                        modifier = Modifier.focusRequester(focusRequester),
+                        itemWidth = itemWidth,
+                        cardSize = cardSize,
+                        onClick = { onCastMemberClick(member) }
+                    )
+                }
             }
         }
     }
@@ -76,16 +158,21 @@ fun CastSection(
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun CastMemberItem(
-    member: MetaCastMember
+    member: MetaCastMember,
+    modifier: Modifier = Modifier,
+    itemWidth: Dp = 150.dp,
+    cardSize: Dp = 100.dp,
+    onClick: () -> Unit = {}
 ) {
     Column(
-        modifier = Modifier.width(150.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        modifier = Modifier.width(itemWidth),
+        horizontalAlignment = Alignment.Start
     ) {
         Card(
-            onClick = { /* no-op (for focus + row scrolling) */ },
-            modifier = Modifier
-                .size(100.dp),
+            onClick = onClick,
+            modifier = modifier
+                .size(cardSize)
+                .align(Alignment.Start),
             shape = CardDefaults.shape(
                 shape = CircleShape
             ),
@@ -113,8 +200,8 @@ private fun CastMemberItem(
                             .data(photo)
                             .crossfade(true)
                             .size(
-                                width = with(LocalDensity.current) { 100.dp.roundToPx() },
-                                height = with(LocalDensity.current) { 100.dp.roundToPx() }
+                                width = with(LocalDensity.current) { cardSize.roundToPx() },
+                                height = with(LocalDensity.current) { cardSize.roundToPx() }
                             )
                             .build(),
                         contentDescription = member.name,

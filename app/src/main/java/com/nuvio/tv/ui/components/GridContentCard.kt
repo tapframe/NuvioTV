@@ -5,8 +5,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -48,13 +49,13 @@ fun GridContentCard(
     val requestHeightPx = remember(density, posterCardStyle.height) { with(density) { posterCardStyle.height.roundToPx() } }
 
     Column(
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier.width(posterCardStyle.width)
     ) {
         Card(
             onClick = onClick,
             modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(posterCardStyle.aspectRatio)
+                .width(posterCardStyle.width)
+                .height(posterCardStyle.height)
                 .then(
                     if (focusRequester != null) Modifier.focusRequester(focusRequester)
                     else Modifier
@@ -96,7 +97,9 @@ fun GridContentCard(
         if (showLabel) {
             Text(
                 text = item.name,
-                modifier = Modifier.padding(top = 8.dp, start = 2.dp, end = 2.dp),
+                modifier = Modifier
+                    .width(posterCardStyle.width)
+                    .padding(top = 8.dp, start = 2.dp, end = 2.dp),
                 style = MaterialTheme.typography.titleMedium,
                 color = NuvioColors.TextPrimary,
                 maxLines = 1,

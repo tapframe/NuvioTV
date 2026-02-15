@@ -37,7 +37,8 @@ data class Meta(
 data class MetaCastMember(
     val name: String,
     val character: String? = null,
-    val photo: String? = null
+    val photo: String? = null,
+    val tmdbId: Int? = null
 )
 
 @Immutable

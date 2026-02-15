@@ -89,6 +89,7 @@ private enum class RestoreTarget {
 fun MetaDetailsScreen(
     viewModel: MetaDetailsViewModel = hiltViewModel(),
     onBackPress: () -> Unit,
+    onNavigateToCastDetail: (personId: Int, personName: String) -> Unit = { _, _ -> },
     onPlayClick: (
         videoId: String,
         contentType: String,
@@ -221,7 +222,8 @@ fun MetaDetailsScreen(
                     trailerUrl = uiState.trailerUrl,
                     isTrailerPlaying = uiState.isTrailerPlaying,
                     onTrailerEnded = { viewModel.onEvent(MetaDetailsEvent.OnTrailerEnded) },
-                    restorePlayFocusAfterTrailerBackToken = restorePlayFocusAfterTrailerBackToken
+                    restorePlayFocusAfterTrailerBackToken = restorePlayFocusAfterTrailerBackToken,
+                    onNavigateToCastDetail = onNavigateToCastDetail
                 )
             }
         }
@@ -295,7 +297,8 @@ private fun MetaDetailsContent(
     trailerUrl: String?,
     isTrailerPlaying: Boolean,
     onTrailerEnded: () -> Unit,
-    restorePlayFocusAfterTrailerBackToken: Int
+    restorePlayFocusAfterTrailerBackToken: Int,
+    onNavigateToCastDetail: (personId: Int, personName: String) -> Unit = { _, _ -> }
 ) {
     val isSeries = remember(meta.type, meta.videos) {
         meta.type == ContentType.SERIES || meta.videos.isNotEmpty()
@@ -372,6 +375,32 @@ private fun MetaDetailsContent(
             meta.castMembers
         } else {
             meta.cast.map { name -> MetaCastMember(name = name) }
+        }
+    }
+
+    fun isLeadCreditRole(role: String?): Boolean {
+        val r = role?.trim().orEmpty()
+        return r.equals("Creator", ignoreCase = true) ||
+            r.equals("Director", ignoreCase = true) ||
+            r.equals("Writer", ignoreCase = true)
+    }
+
+    val directorWriterMembers = remember(castMembersToShow) {
+        val creators = castMembersToShow.filter { it.tmdbId != null && it.character.equals("Creator", ignoreCase = true) }
+        val directors = castMembersToShow.filter { it.tmdbId != null && it.character.equals("Director", ignoreCase = true) }
+        val writers = castMembersToShow.filter { it.tmdbId != null && it.character.equals("Writer", ignoreCase = true) }
+        when {
+            creators.isNotEmpty() -> creators
+            directors.isNotEmpty() -> directors
+            else -> writers
+        }
+    }
+
+    val normalCastMembers = remember(castMembersToShow, directorWriterMembers) {
+        val leadingIds = directorWriterMembers.mapNotNull { it.tmdbId }.toSet()
+        castMembersToShow.filterNot {
+            val id = it.tmdbId
+            id != null && id in leadingIds && isLeadCreditRole(it.character)
         }
     }
 
@@ -519,6 +548,8 @@ private fun MetaDetailsContent(
             )
         }
 
+        var lastOpenedCastTmdbId by rememberSaveable(meta.id) { mutableStateOf<Int?>(null) }
+
         // Single scrollable column with hero + content
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -585,9 +616,20 @@ private fun MetaDetailsContent(
             }
 
             // Cast section below episodes
-            if (castMembersToShow.isNotEmpty()) {
+            if (directorWriterMembers.isNotEmpty() || normalCastMembers.isNotEmpty()) {
                 item(key = "cast", contentType = "horizontal_row") {
-                    CastSection(cast = castMembersToShow)
+                    CastSection(
+                        cast = normalCastMembers,
+                        title = "Creator and Casts",
+                        leadingCast = directorWriterMembers,
+                        preferredFocusedCastTmdbId = lastOpenedCastTmdbId,
+                        onCastMemberClick = { member ->
+                            member.tmdbId?.let { id ->
+                                lastOpenedCastTmdbId = id
+                                onNavigateToCastDetail(id, member.name)
+                            }
+                        }
+                    )
                 }
             }
 

@@ -32,6 +32,7 @@ import com.nuvio.tv.ui.screens.home.ContinueWatchingItem
 import com.nuvio.tv.ui.screens.account.AuthSignInScreen
 import com.nuvio.tv.ui.screens.account.SyncCodeGenerateScreen
 import com.nuvio.tv.ui.screens.account.SyncCodeClaimScreen
+import com.nuvio.tv.ui.screens.cast.CastDetailScreen
 
 @Composable
 fun NuvioNavHost(
@@ -119,6 +120,9 @@ fun NuvioNavHost(
         ) { backStackEntry ->
             MetaDetailsScreen(
                 onBackPress = { navController.popBackStack() },
+                onNavigateToCastDetail = { personId, personName ->
+                    navController.navigate(Screen.CastDetail.createRoute(personId, personName))
+                },
                 onPlayClick = { videoId, contentType, contentId, title, poster, backdrop, logo, season, episode, episodeName, genres, year, runtime ->
                     navController.navigate(
                         Screen.Stream.createRoute(
@@ -459,6 +463,21 @@ fun NuvioNavHost(
                     navController.navigate(Screen.Detail.createRoute(itemId, itemType, addonBaseUrl))
                 },
                 onBackPress = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.CastDetail.route,
+            arguments = listOf(
+                navArgument("personId") { type = NavType.StringType },
+                navArgument("personName") { type = NavType.StringType }
+            )
+        ) {
+            CastDetailScreen(
+                onBackPress = { navController.popBackStack() },
+                onNavigateToDetail = { itemId, itemType, addonBaseUrl ->
+                    navController.navigate(Screen.Detail.createRoute(itemId, itemType, addonBaseUrl))
+                }
             )
         }
     }

@@ -6,6 +6,9 @@ import com.nuvio.tv.data.remote.api.TmdbEpisode
 import com.nuvio.tv.domain.model.ContentType
 import com.nuvio.tv.domain.model.MetaCastMember
 import com.nuvio.tv.domain.model.MetaCompany
+import com.nuvio.tv.domain.model.MetaPreview
+import com.nuvio.tv.domain.model.PersonDetail
+import com.nuvio.tv.domain.model.PosterShape
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -24,6 +27,7 @@ class TmdbMetadataService @Inject constructor(
     // In-memory caches
     private val enrichmentCache = ConcurrentHashMap<String, TmdbEnrichment>()
     private val episodeCache = ConcurrentHashMap<String, Map<Pair<Int, Int>, TmdbEpisodeEnrichment>>()
+    private val personCache = ConcurrentHashMap<Int, PersonDetail>()
 
     suspend fun fetchEnrichment(
         tmdbId: String,
@@ -127,22 +131,105 @@ class TmdbMetadataService @Inject constructor(
                         MetaCastMember(
                             name = name,
                             character = member.character?.takeIf { it.isNotBlank() },
-                            photo = buildImageUrl(member.profilePath, size = "w500")
+                            photo = buildImageUrl(member.profilePath, size = "w500"),
+                            tmdbId = member.id
                         )
                     }
 
-                val director = credits?.crew
+                val creatorMembers = if (tmdbType == "tv") {
+                    details?.createdBy
+                        .orEmpty()
+                        .mapNotNull { creator ->
+                            val tmdbPersonId = creator.id ?: return@mapNotNull null
+                            val name = creator.name?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                            MetaCastMember(
+                                name = name,
+                                character = "Creator",
+                                photo = buildImageUrl(creator.profilePath, size = "w500"),
+                                tmdbId = tmdbPersonId
+                            )
+                        }
+                        .distinctBy { it.tmdbId ?: it.name.lowercase() }
+                } else {
+                    emptyList()
+                }
+
+                val creator = if (tmdbType == "tv") {
+                    details?.createdBy
+                        .orEmpty()
+                        .mapNotNull { it.name?.trim()?.takeIf { name -> name.isNotBlank() } }
+                } else {
+                    emptyList()
+                }
+
+                val directorCrew = credits?.crew
                     .orEmpty()
                     .filter { it.job.equals("Director", ignoreCase = true) }
+
+                val directorMembers = directorCrew
+                    .mapNotNull { member ->
+                        val tmdbPersonId = member.id ?: return@mapNotNull null
+                        val name = member.name?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                        MetaCastMember(
+                            name = name,
+                            character = "Director",
+                            photo = buildImageUrl(member.profilePath, size = "w500"),
+                            tmdbId = tmdbPersonId
+                        )
+                    }
+                    .distinctBy { it.tmdbId ?: it.name.lowercase() }
+
+                val director = directorCrew
                     .mapNotNull { it.name?.trim()?.takeIf { name -> name.isNotBlank() } }
 
-                val writer = credits?.crew
+                val writerCrew = credits?.crew
                     .orEmpty()
                     .filter { crew ->
                         val job = crew.job?.lowercase() ?: ""
                         job.contains("writer") || job.contains("screenplay")
                     }
+
+                val writerMembers = writerCrew
+                    .mapNotNull { member ->
+                        val tmdbPersonId = member.id ?: return@mapNotNull null
+                        val name = member.name?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                        MetaCastMember(
+                            name = name,
+                            character = "Writer",
+                            photo = buildImageUrl(member.profilePath, size = "w500"),
+                            tmdbId = tmdbPersonId
+                        )
+                    }
+                    .distinctBy { it.tmdbId ?: it.name.lowercase() }
+
+                val writer = writerCrew
                     .mapNotNull { it.name?.trim()?.takeIf { name -> name.isNotBlank() } }
+
+                // Only expose either Director or Writer people (prefer Director).
+                val hasCreator = creatorMembers.isNotEmpty() || creator.isNotEmpty()
+                val hasDirector = directorMembers.isNotEmpty() || director.isNotEmpty()
+
+                val exposedDirectorMembers = when {
+                    tmdbType == "tv" && hasCreator -> creatorMembers
+                    tmdbType != "tv" && hasDirector -> directorMembers
+                    else -> emptyList()
+                }
+                val exposedWriterMembers = when {
+                    tmdbType == "tv" && hasCreator -> emptyList()
+                    tmdbType != "tv" && hasDirector -> emptyList()
+                    else -> writerMembers
+                }
+
+                val exposedDirector = when {
+                    tmdbType == "tv" && hasCreator -> creator
+                    tmdbType != "tv" && hasDirector -> director
+                    else -> emptyList()
+                }
+                val exposedWriter = when {
+                    tmdbType == "tv" && hasCreator -> emptyList()
+                    tmdbType != "tv" && hasDirector -> emptyList()
+                    else -> writer
+                }
 
                 if (
                     genres.isEmpty() && description == null && backdrop == null && logo == null &&
@@ -160,12 +247,14 @@ class TmdbMetadataService @Inject constructor(
                     backdrop = backdrop,
                     logo = logo,
                     poster = poster,
+                    directorMembers = exposedDirectorMembers,
+                    writerMembers = exposedWriterMembers,
                     castMembers = castMembers,
                     releaseInfo = releaseInfo,
                     rating = rating,
                     runtimeMinutes = runtime,
-                    director = director,
-                    writer = writer,
+                    director = exposedDirector,
+                    writer = exposedWriter,
                     productionCompanies = productionCompanies,
                     networks = networks,
                     countries = countries,
@@ -222,6 +311,91 @@ class TmdbMetadataService @Inject constructor(
             ?.replace('_', '-')
             ?: "en"
     }
+
+    suspend fun fetchPersonDetail(personId: Int): PersonDetail? =
+        withContext(Dispatchers.IO) {
+            personCache[personId]?.let { return@withContext it }
+
+            try {
+                val (person, credits) = coroutineScope {
+                    val personDeferred = async {
+                        tmdbApi.getPersonDetails(personId, TMDB_API_KEY).body()
+                    }
+                    val creditsDeferred = async {
+                        tmdbApi.getPersonCombinedCredits(personId, TMDB_API_KEY).body()
+                    }
+                    Pair(personDeferred.await(), creditsDeferred.await())
+                }
+
+                if (person == null) return@withContext null
+
+                val seenMovieIds = mutableSetOf<Int>()
+                val movieCredits = credits?.cast
+                    .orEmpty()
+                    .filter { it.mediaType == "movie" && it.posterPath != null }
+                    .sortedByDescending { it.voteAverage ?: 0.0 }
+                    .mapNotNull { credit ->
+                        if (!seenMovieIds.add(credit.id)) return@mapNotNull null
+                        val title = credit.title ?: credit.name ?: return@mapNotNull null
+                        val year = credit.releaseDate?.take(4)
+                        MetaPreview(
+                            id = "tmdb:${credit.id}",
+                            type = ContentType.MOVIE,
+                            name = title,
+                            poster = buildImageUrl(credit.posterPath, "w500"),
+                            posterShape = PosterShape.POSTER,
+                            background = buildImageUrl(credit.backdropPath, "w1280"),
+                            logo = null,
+                            description = credit.overview?.takeIf { it.isNotBlank() },
+                            releaseInfo = year,
+                            imdbRating = credit.voteAverage?.toFloat(),
+                            genres = emptyList()
+                        )
+                    }
+
+                val seenTvIds = mutableSetOf<Int>()
+                val tvCredits = credits?.cast
+                    .orEmpty()
+                    .filter { it.mediaType == "tv" && it.posterPath != null }
+                    .sortedByDescending { it.voteAverage ?: 0.0 }
+                    .mapNotNull { credit ->
+                        if (!seenTvIds.add(credit.id)) return@mapNotNull null
+                        val title = credit.name ?: credit.title ?: return@mapNotNull null
+                        val year = credit.firstAirDate?.take(4)
+                        MetaPreview(
+                            id = "tmdb:${credit.id}",
+                            type = ContentType.SERIES,
+                            name = title,
+                            poster = buildImageUrl(credit.posterPath, "w500"),
+                            posterShape = PosterShape.POSTER,
+                            background = buildImageUrl(credit.backdropPath, "w1280"),
+                            logo = null,
+                            description = credit.overview?.takeIf { it.isNotBlank() },
+                            releaseInfo = year,
+                            imdbRating = credit.voteAverage?.toFloat(),
+                            genres = emptyList()
+                        )
+                    }
+
+                val detail = PersonDetail(
+                    tmdbId = person.id,
+                    name = person.name ?: "Unknown",
+                    biography = person.biography?.takeIf { it.isNotBlank() },
+                    birthday = person.birthday?.takeIf { it.isNotBlank() },
+                    deathday = person.deathday?.takeIf { it.isNotBlank() },
+                    placeOfBirth = person.placeOfBirth?.takeIf { it.isNotBlank() },
+                    profilePhoto = buildImageUrl(person.profilePath, "w500"),
+                    knownFor = person.knownForDepartment?.takeIf { it.isNotBlank() },
+                    movieCredits = movieCredits,
+                    tvCredits = tvCredits
+                )
+                personCache[personId] = detail
+                detail
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch person detail: ${e.message}", e)
+                null
+            }
+        }
 }
 
 data class TmdbEnrichment(
@@ -231,6 +405,8 @@ data class TmdbEnrichment(
     val backdrop: String?,
     val logo: String?,
     val poster: String?,
+    val directorMembers: List<MetaCastMember>,
+    val writerMembers: List<MetaCastMember>,
     val castMembers: List<MetaCastMember>,
     val releaseInfo: String?,
     val rating: Double?,
