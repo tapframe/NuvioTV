@@ -12,9 +12,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -39,6 +43,7 @@ import com.nuvio.tv.ui.theme.NuvioColors
 fun CastSection(
     cast: List<MetaCastMember>,
     modifier: Modifier = Modifier,
+    preferredFocusedCastTmdbId: Int? = null,
     onCastMemberClick: (MetaCastMember) -> Unit = {}
 ) {
     if (cast.isEmpty()) return
@@ -65,11 +70,21 @@ fun CastSection(
             items(
                 items = cast,
                 key = { member ->
-                    member.name + "|" + (member.character ?: "") + "|" + (member.photo ?: "")
+                    (member.tmdbId?.toString() ?: member.name) + "|" + (member.character ?: "") + "|" + (member.photo ?: "")
                 }
             ) { member ->
+                val focusRequester = remember(member.tmdbId, member.name, member.photo, member.character) { FocusRequester() }
+                val shouldRestoreFocus = preferredFocusedCastTmdbId != null && member.tmdbId == preferredFocusedCastTmdbId
+
+                LaunchedEffect(shouldRestoreFocus) {
+                    if (shouldRestoreFocus) {
+                        focusRequester.requestFocus()
+                    }
+                }
+
                 CastMemberItem(
                     member = member,
+                    modifier = Modifier.focusRequester(focusRequester),
                     onClick = { onCastMemberClick(member) }
                 )
             }
@@ -81,6 +96,7 @@ fun CastSection(
 @Composable
 private fun CastMemberItem(
     member: MetaCastMember,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit = {}
 ) {
     Column(
@@ -89,7 +105,7 @@ private fun CastMemberItem(
     ) {
         Card(
             onClick = onClick,
-            modifier = Modifier
+            modifier = modifier
                 .size(100.dp),
             shape = CardDefaults.shape(
                 shape = CircleShape

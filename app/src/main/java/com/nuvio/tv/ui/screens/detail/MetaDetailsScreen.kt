@@ -522,6 +522,8 @@ private fun MetaDetailsContent(
             )
         }
 
+        var lastOpenedCastTmdbId by rememberSaveable(meta.id) { mutableStateOf<Int?>(null) }
+
         // Single scrollable column with hero + content
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -592,8 +594,10 @@ private fun MetaDetailsContent(
                 item(key = "cast", contentType = "horizontal_row") {
                     CastSection(
                         cast = castMembersToShow,
+                        preferredFocusedCastTmdbId = lastOpenedCastTmdbId,
                         onCastMemberClick = { member ->
                             member.tmdbId?.let { id ->
+                                lastOpenedCastTmdbId = id
                                 onNavigateToCastDetail(id, member.name)
                             }
                         }

@@ -6,6 +6,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,8 +22,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -31,6 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -126,6 +131,14 @@ private fun CastDetailContent(
         )
     }
 
+    val firstPosterFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(allCredits) {
+        if (allCredits.isNotEmpty()) {
+            firstPosterFocusRequester.requestFocus()
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         // Left accent gradient overlay
         val accentGradient = remember(accentColor, backgroundColor) {
@@ -198,6 +211,7 @@ private fun CastDetailContent(
                     FilmographyRow(
                         credits = allCredits,
                         posterCardStyle = filmographyPosterStyle,
+                        firstItemFocusRequester = firstPosterFocusRequester,
                         onItemClick = { item ->
                             onNavigateToDetail(item.id, item.apiType, null)
                         }
@@ -230,7 +244,8 @@ private fun HeroSection(person: PersonDetail) {
             onClick = { },
             modifier = Modifier
                 .width(160.dp)
-                .height(240.dp),
+                .height(240.dp)
+                .focusable(false),
             shape = CardDefaults.shape(
                 shape = RoundedCornerShape(16.dp)
             ),
@@ -381,6 +396,7 @@ private fun SectionHeader(title: String, count: Int) {
 private fun FilmographyRow(
     credits: List<MetaPreview>,
     posterCardStyle: PosterCardStyle,
+    firstItemFocusRequester: FocusRequester,
     onItemClick: (MetaPreview) -> Unit
 ) {
     LazyRow(
@@ -388,15 +404,16 @@ private fun FilmographyRow(
         contentPadding = PaddingValues(horizontal = 48.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(
+        itemsIndexed(
             items = credits,
-            key = { it.id + it.name }
-        ) { item ->
+            key = { _, item -> item.id + item.name }
+        ) { index, item ->
             GridContentCard(
                 item = item,
                 onClick = { onItemClick(item) },
                 posterCardStyle = posterCardStyle,
-                showLabel = true
+                showLabel = true,
+                focusRequester = if (index == 0) firstItemFocusRequester else null
             )
         }
     }
