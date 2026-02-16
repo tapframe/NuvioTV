@@ -13,6 +13,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
@@ -23,6 +24,7 @@ class SubtitleRepositoryImpl @Inject constructor(
 
     companion object {
         private const val TAG = "SubtitleRepository"
+        private const val PER_ADDON_TIMEOUT_MS = 8_000L
     }
 
     override suspend fun getSubtitles(
@@ -33,6 +35,7 @@ class SubtitleRepositoryImpl @Inject constructor(
         videoSize: Long?,
         filename: String?
     ): List<Subtitle> = withContext(Dispatchers.IO) {
+        val startedAtMs = System.currentTimeMillis()
         Log.d(TAG, "Fetching subtitles for type=$type, id=$id, videoId=$videoId")
         
         // Get installed addons
@@ -59,13 +62,34 @@ class SubtitleRepositoryImpl @Inject constructor(
         }
         
         // Fetch subtitles from all addons in parallel
-        coroutineScope {
+        val result = coroutineScope {
             subtitleAddons.map { addon ->
                 async {
-                    fetchSubtitlesFromAddon(addon, type, id, videoId, videoHash, videoSize, filename)
+                    val addonStartMs = System.currentTimeMillis()
+                    val subtitles = withTimeoutOrNull(PER_ADDON_TIMEOUT_MS) {
+                        fetchSubtitlesFromAddon(addon, type, id, videoId, videoHash, videoSize, filename)
+                    }
+                    if (subtitles == null) {
+                        Log.w(
+                            TAG,
+                            "Subtitle fetch timed out for addon=${addon.name} after ${PER_ADDON_TIMEOUT_MS}ms"
+                        )
+                        emptyList()
+                    } else {
+                        Log.d(
+                            TAG,
+                            "Subtitle fetch done for addon=${addon.name} count=${subtitles.size} in ${System.currentTimeMillis() - addonStartMs}ms"
+                        )
+                        subtitles
+                    }
                 }
             }.awaitAll().flatten()
         }
+        Log.d(
+            TAG,
+            "Subtitle fetch completed total=${result.size} fromAddons=${subtitleAddons.size} in ${System.currentTimeMillis() - startedAtMs}ms"
+        )
+        result
     }
     
     private fun supportsType(resource: com.nuvio.tv.domain.model.AddonResource, type: String, id: String): Boolean {

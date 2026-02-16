@@ -2,6 +2,7 @@
 
 package com.nuvio.tv.ui.screens.player
 
+import android.view.KeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,9 +40,11 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
@@ -51,6 +54,7 @@ import androidx.tv.material3.IconButton
 import androidx.tv.material3.IconButtonDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import com.nuvio.tv.data.local.SubtitleOrganizationMode
 import com.nuvio.tv.data.local.SubtitleStyleSettings
 import com.nuvio.tv.domain.model.Subtitle
 import com.nuvio.tv.ui.components.LoadingIndicator
@@ -80,6 +84,7 @@ internal fun SubtitleSelectionDialog(
     addonSubtitles: List<Subtitle>,
     selectedAddonSubtitle: Subtitle?,
     preferredLanguage: String,
+    subtitleOrganizationMode: SubtitleOrganizationMode,
     isLoadingAddons: Boolean,
     onInternalTrackSelected: (Int) -> Unit,
     onAddonSubtitleSelected: (Subtitle) -> Unit,
@@ -88,7 +93,18 @@ internal fun SubtitleSelectionDialog(
     onDismiss: () -> Unit
 ) {
     var selectedTabIndex by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Built-in", "Addons", "Style")
+    val uniqueLanguageCount = remember(addonSubtitles) {
+        addonSubtitles
+            .map { normalizeSubtitleLanguageCode(it.lang) }
+            .distinct()
+            .size
+    }
+    val addonsTabTitle = when (subtitleOrganizationMode) {
+        SubtitleOrganizationMode.BY_LANGUAGE -> "Languages"
+        SubtitleOrganizationMode.NONE,
+        SubtitleOrganizationMode.BY_ADDON -> "Addons"
+    }
+    val tabs = listOf("Built-in", addonsTabTitle, "Style")
     val tabFocusRequesters = remember { tabs.map { FocusRequester() } }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -128,7 +144,7 @@ internal fun SubtitleSelectionDialog(
                         SubtitleTab(
                             title = tabs[index],
                             isSelected = selectedTabIndex == index,
-                            badgeCount = if (index == 1) addonSubtitles.size else null,
+                            badgeCount = if (index == 1) uniqueLanguageCount else null,
                             focusRequester = tabFocusRequesters[index],
                             onClick = onTabClick
                         )
@@ -152,6 +168,7 @@ internal fun SubtitleSelectionDialog(
                         subtitles = addonSubtitles,
                         selectedSubtitle = selectedAddonSubtitle,
                         preferredLanguage = preferredLanguage,
+                        subtitleOrganizationMode = subtitleOrganizationMode,
                         isLoading = isLoadingAddons,
                         onSubtitleSelected = onAddonSubtitleSelected
                     )
@@ -282,12 +299,25 @@ private fun AddonSubtitlesContent(
     subtitles: List<Subtitle>,
     selectedSubtitle: Subtitle?,
     preferredLanguage: String,
+    subtitleOrganizationMode: SubtitleOrganizationMode,
     isLoading: Boolean,
     onSubtitleSelected: (Subtitle) -> Unit
 ) {
-    val orderedSubtitles = remember(subtitles, preferredLanguage) {
-        sortByPreferredLanguage(subtitles, preferredLanguage) { it.lang }
+    val viewData = remember(subtitles, preferredLanguage, subtitleOrganizationMode) {
+        buildAddonSubtitleViewData(
+            subtitles = subtitles,
+            preferredLanguage = preferredLanguage,
+            mode = subtitleOrganizationMode
+        )
     }
+
+    var selectedFilterKey by remember(subtitles, preferredLanguage, subtitleOrganizationMode) {
+        mutableStateOf(viewData.filters.firstOrNull()?.key)
+    }
+    val currentFilter = selectedFilterKey?.let { key ->
+        viewData.filters.firstOrNull { it.key == key }
+    } ?: viewData.filters.firstOrNull()
+    val firstSubtitleFocusRequester = remember(currentFilter?.key) { FocusRequester() }
 
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -331,19 +361,177 @@ private fun AddonSubtitlesContent(
                 }
             }
         } else {
-            items(orderedSubtitles) { subtitle ->
+            if (viewData.filters.isNotEmpty() && viewData.filterTitle != null) {
+                item(key = "filter_selector") {
+                    FilterSelector(
+                        title = viewData.filterTitle,
+                        filters = viewData.filters,
+                        selectedKey = currentFilter?.key,
+                        onFilterSelected = { selectedFilterKey = it },
+                        downFocusRequester = if (currentFilter?.items?.isNotEmpty() == true) firstSubtitleFocusRequester else null
+                    )
+                }
+            }
+
+            items(
+                items = currentFilter?.items.orEmpty(),
+                key = { subtitle -> "${subtitle.addonName}:${subtitle.id}:${subtitle.url}" }
+            ) { subtitle ->
                 AddonSubtitleItem(
                     subtitle = subtitle,
                     isSelected = selectedSubtitle?.id == subtitle.id,
-                    onClick = { onSubtitleSelected(subtitle) }
+                    onClick = { onSubtitleSelected(subtitle) },
+                    focusRequester = if (subtitle == currentFilter?.items?.firstOrNull()) firstSubtitleFocusRequester else null
                 )
             }
         }
     }
 }
 
+@Composable
+private fun FilterSelector(
+    title: String,
+    filters: List<SubtitleFilter>,
+    selectedKey: String?,
+    onFilterSelected: (String) -> Unit,
+    downFocusRequester: FocusRequester?
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            color = Color.White.copy(alpha = 0.65f)
+        )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(filters, key = { it.key }) { filter ->
+                FilterChip(
+                    label = filter.label,
+                    isSelected = selectedKey == filter.key,
+                    onClick = { onFilterSelected(filter.key) },
+                    onMoveDown = { downFocusRequester?.requestFocus() }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterChip(
+    label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    onMoveDown: () -> Unit
+) {
+    var isFocused by remember { mutableStateOf(false) }
+
+    Card(
+        onClick = onClick,
+        modifier = Modifier
+            .onFocusChanged { isFocused = it.isFocused }
+            .onKeyEvent { event ->
+                if (event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
+                    event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                ) {
+                    onMoveDown()
+                    true
+                } else {
+                    false
+                }
+            },
+        colors = CardDefaults.colors(
+            containerColor = when {
+                isSelected -> Color.White.copy(alpha = 0.2f)
+                isFocused -> Color.White.copy(alpha = 0.12f)
+                else -> Color.White.copy(alpha = 0.06f)
+            },
+            focusedContainerColor = if (isSelected) Color.White.copy(alpha = 0.24f) else Color.White.copy(alpha = 0.12f)
+        ),
+        shape = CardDefaults.shape(RoundedCornerShape(10.dp))
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+        )
+    }
+}
+
+private data class SubtitleFilter(
+    val key: String,
+    val label: String,
+    val items: List<Subtitle>
+)
+
+private data class AddonSubtitleViewData(
+    val filterTitle: String?,
+    val filters: List<SubtitleFilter>
+)
+
+private fun buildAddonSubtitleViewData(
+    subtitles: List<Subtitle>,
+    preferredLanguage: String,
+    mode: SubtitleOrganizationMode
+): AddonSubtitleViewData {
+    val preferredFirst = sortByPreferredLanguage(subtitles, preferredLanguage) { it.lang }
+
+    return when (mode) {
+        SubtitleOrganizationMode.NONE -> {
+            AddonSubtitleViewData(
+                filterTitle = null,
+                filters = listOf(
+                    SubtitleFilter(
+                        key = "all",
+                        label = "All",
+                        items = preferredFirst
+                    )
+                )
+            )
+        }
+
+        SubtitleOrganizationMode.BY_LANGUAGE -> {
+            AddonSubtitleViewData(
+                filterTitle = "Languages",
+                filters = preferredFirst
+                    .groupBy { subtitleLanguageGroupKey(it.lang) }
+                    .map { (languageKey, items) ->
+                        val label = Subtitle.languageCodeToName(languageKey)
+                        SubtitleFilter(
+                            key = "lang:$languageKey",
+                            label = label,
+                            items = items
+                        )
+                    }
+            )
+        }
+
+        SubtitleOrganizationMode.BY_ADDON -> {
+            AddonSubtitleViewData(
+                filterTitle = "Addons",
+                filters = preferredFirst
+                    .groupBy { it.addonName }
+                    .map { (addon, items) ->
+                        SubtitleFilter(
+                            key = "addon:$addon",
+                            label = addon,
+                            items = sortByPreferredLanguage(items, preferredLanguage) { it.lang }
+                        )
+                    }
+            )
+        }
+    }
+}
+
+private fun subtitleLanguageGroupKey(language: String): String {
+    val normalized = normalizeSubtitleLanguageCode(language)
+    return normalized
+        .substringBefore('-')
+        .substringBefore('_')
+}
+
 private fun normalizeSubtitleLanguageCode(lang: String): String {
     return when (lang.trim().lowercase()) {
+        "pt-br", "pt_br", "br", "pob" -> "pt"
         "eng" -> "en"
         "spa" -> "es"
         "fre", "fra" -> "fr"
@@ -410,7 +598,8 @@ private fun <T> sortByPreferredLanguage(
 private fun AddonSubtitleItem(
     subtitle: Subtitle,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    focusRequester: FocusRequester? = null
 ) {
     var isFocused by remember { mutableStateOf(false) }
 
@@ -418,6 +607,7 @@ private fun AddonSubtitleItem(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { isFocused = it.isFocused },
         colors = CardDefaults.colors(
             containerColor = when {
@@ -437,7 +627,7 @@ private fun AddonSubtitleItem(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = subtitle.getDisplayLanguage(),
+                    text = Subtitle.languageCodeToName(normalizeSubtitleLanguageCode(subtitle.lang)),
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White
                 )

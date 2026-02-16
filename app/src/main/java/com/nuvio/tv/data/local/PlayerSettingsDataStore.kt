@@ -142,7 +142,8 @@ data class PlayerSettings(
     val streamAutoPlaySelectedPlugins: Set<String> = emptySet(),
     val streamAutoPlayRegex: String = "",
     val streamReuseLastLinkEnabled: Boolean = false,
-    val streamReuseLastLinkCacheHours: Int = 24
+    val streamReuseLastLinkCacheHours: Int = 24,
+    val subtitleOrganizationMode: SubtitleOrganizationMode = SubtitleOrganizationMode.NONE
 )
 
 enum class StreamAutoPlayMode {
@@ -155,6 +156,12 @@ enum class StreamAutoPlaySource {
     ALL_SOURCES,
     INSTALLED_ADDONS_ONLY,
     ENABLED_PLUGINS_ONLY
+}
+
+enum class SubtitleOrganizationMode {
+    NONE,
+    BY_LANGUAGE,
+    BY_ADDON
 }
 
 enum class PlayerPreference {
@@ -206,6 +213,7 @@ class PlayerSettingsDataStore @Inject constructor(
     private val streamAutoPlayRegexKey = stringPreferencesKey("stream_auto_play_regex")
     private val streamReuseLastLinkEnabledKey = booleanPreferencesKey("stream_reuse_last_link_enabled")
     private val streamReuseLastLinkCacheHoursKey = intPreferencesKey("stream_reuse_last_link_cache_hours")
+    private val subtitleOrganizationModeKey = stringPreferencesKey("subtitle_organization_mode")
 
     // Subtitle style settings keys
     private val subtitlePreferredLanguageKey = stringPreferencesKey("subtitle_preferred_language")
@@ -290,6 +298,7 @@ class PlayerSettingsDataStore @Inject constructor(
             streamAutoPlayRegex = prefs[streamAutoPlayRegexKey] ?: "",
             streamReuseLastLinkEnabled = prefs[streamReuseLastLinkEnabledKey] ?: false,
             streamReuseLastLinkCacheHours = (prefs[streamReuseLastLinkCacheHoursKey] ?: 24).coerceIn(1, 168),
+            subtitleOrganizationMode = parseSubtitleOrganizationMode(prefs[subtitleOrganizationModeKey]),
             subtitleStyle = SubtitleStyleSettings(
                 preferredLanguage = prefs[subtitlePreferredLanguageKey] ?: "en",
                 secondaryPreferredLanguage = prefs[subtitleSecondaryLanguageKey],
@@ -427,6 +436,21 @@ class PlayerSettingsDataStore @Inject constructor(
     suspend fun setStreamReuseLastLinkCacheHours(hours: Int) {
         dataStore.edit { prefs ->
             prefs[streamReuseLastLinkCacheHoursKey] = hours.coerceIn(1, 168)
+        }
+    }
+
+    suspend fun setSubtitleOrganizationMode(mode: SubtitleOrganizationMode) {
+        dataStore.edit { prefs ->
+            prefs[subtitleOrganizationModeKey] = mode.name
+        }
+    }
+
+    private fun parseSubtitleOrganizationMode(value: String?): SubtitleOrganizationMode {
+        return when (value) {
+            null, "NONE" -> SubtitleOrganizationMode.NONE
+            "BY_LANGUAGE" -> SubtitleOrganizationMode.BY_LANGUAGE
+            "BY_ADDON" -> SubtitleOrganizationMode.BY_ADDON
+            else -> SubtitleOrganizationMode.NONE
         }
     }
 

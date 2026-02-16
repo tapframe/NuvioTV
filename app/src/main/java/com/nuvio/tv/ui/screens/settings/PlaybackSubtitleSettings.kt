@@ -5,7 +5,10 @@ package com.nuvio.tv.ui.screens.settings
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.FormatBold
@@ -15,6 +18,7 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.VerticalAlignBottom
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
@@ -24,6 +28,7 @@ import androidx.tv.material3.Text
 import com.nuvio.tv.data.local.AVAILABLE_SUBTITLE_LANGUAGES
 import com.nuvio.tv.data.local.LibassRenderType
 import com.nuvio.tv.data.local.PlayerSettings
+import com.nuvio.tv.data.local.SubtitleOrganizationMode
 import com.nuvio.tv.ui.theme.NuvioColors
 
 private val subtitleColors = listOf(
@@ -56,6 +61,7 @@ internal fun LazyListScope.subtitleSettingsItems(
     playerSettings: PlayerSettings,
     onShowLanguageDialog: () -> Unit,
     onShowSecondaryLanguageDialog: () -> Unit,
+    onShowSubtitleOrganizationDialog: () -> Unit,
     onShowTextColorDialog: () -> Unit,
     onShowBackgroundColorDialog: () -> Unit,
     onShowOutlineColorDialog: () -> Unit,
@@ -107,6 +113,17 @@ internal fun LazyListScope.subtitleSettingsItems(
             title = "Secondary Preferred Language",
             subtitle = secondaryLanguageName,
             onClick = onShowSecondaryLanguageDialog,
+            onFocused = onItemFocused,
+            enabled = enabled
+        )
+    }
+
+    item {
+        NavigationSettingsItem(
+            icon = Icons.Default.Subtitles,
+            title = "Subtitle Organization",
+            subtitle = subtitleOrganizationModeLabel(playerSettings.subtitleOrganizationMode),
+            onClick = onShowSubtitleOrganizationDialog,
             onFocused = onItemFocused,
             enabled = enabled
         )
@@ -290,17 +307,20 @@ internal fun LazyListScope.subtitleSettingsItems(
 internal fun SubtitleSettingsDialogs(
     showLanguageDialog: Boolean,
     showSecondaryLanguageDialog: Boolean,
+    showSubtitleOrganizationDialog: Boolean,
     showTextColorDialog: Boolean,
     showBackgroundColorDialog: Boolean,
     showOutlineColorDialog: Boolean,
     playerSettings: PlayerSettings,
     onSetPreferredLanguage: (String?) -> Unit,
     onSetSecondaryLanguage: (String?) -> Unit,
+    onSetSubtitleOrganizationMode: (SubtitleOrganizationMode) -> Unit,
     onSetTextColor: (Color) -> Unit,
     onSetBackgroundColor: (Color) -> Unit,
     onSetOutlineColor: (Color) -> Unit,
     onDismissLanguageDialog: () -> Unit,
     onDismissSecondaryLanguageDialog: () -> Unit,
+    onDismissSubtitleOrganizationDialog: () -> Unit,
     onDismissTextColorDialog: () -> Unit,
     onDismissBackgroundColorDialog: () -> Unit,
     onDismissOutlineColorDialog: () -> Unit
@@ -328,6 +348,17 @@ internal fun SubtitleSettingsDialogs(
                 onDismissSecondaryLanguageDialog()
             },
             onDismiss = onDismissSecondaryLanguageDialog
+        )
+    }
+
+    if (showSubtitleOrganizationDialog) {
+        SubtitleOrganizationModeDialog(
+            selectedMode = playerSettings.subtitleOrganizationMode,
+            onModeSelected = {
+                onSetSubtitleOrganizationMode(it)
+                onDismissSubtitleOrganizationDialog()
+            },
+            onDismiss = onDismissSubtitleOrganizationDialog
         )
     }
 
@@ -369,5 +400,63 @@ internal fun SubtitleSettingsDialogs(
             },
             onDismiss = onDismissOutlineColorDialog
         )
+    }
+}
+
+private fun subtitleOrganizationModeLabel(mode: SubtitleOrganizationMode): String {
+    return when (mode) {
+        SubtitleOrganizationMode.NONE -> "None (default order)"
+        SubtitleOrganizationMode.BY_LANGUAGE -> "By language"
+        SubtitleOrganizationMode.BY_ADDON -> "By addon"
+    }
+}
+
+@Composable
+private fun SubtitleOrganizationModeDialog(
+    selectedMode: SubtitleOrganizationMode,
+    onModeSelected: (SubtitleOrganizationMode) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val options = listOf(
+        Triple(SubtitleOrganizationMode.NONE, "None", "Show subtitles in default addon result order."),
+        Triple(SubtitleOrganizationMode.BY_LANGUAGE, "By language", "Group subtitles by language."),
+        Triple(SubtitleOrganizationMode.BY_ADDON, "By addon", "Group subtitles by addon source.")
+    )
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        androidx.compose.foundation.layout.Box(
+            modifier = androidx.compose.ui.Modifier
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+                .background(NuvioColors.BackgroundCard)
+        ) {
+            androidx.compose.foundation.layout.Column(
+                modifier = androidx.compose.ui.Modifier
+                    .width(460.dp)
+                    .padding(24.dp)
+            ) {
+                Text(
+                    text = "Subtitle Organization",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = NuvioColors.TextPrimary
+                )
+                Spacer(modifier = androidx.compose.ui.Modifier.height(16.dp))
+
+                androidx.compose.foundation.lazy.LazyColumn(
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
+                ) {
+                    items(options) { (mode, title, description) ->
+                        val isSelected = mode == selectedMode
+
+                        RenderTypeSettingsItem(
+                            title = title,
+                            subtitle = description,
+                            isSelected = isSelected,
+                            onClick = { onModeSelected(mode) },
+                            onFocused = {}
+                        )
+                    }
+                }
+            }
+        }
     }
 }
